@@ -161,6 +161,7 @@ final class GlobalHotkeyController: ObservableObject {
     var action: (() -> Void)?
 
     private let registrar: any GlobalHotkeyRegistering
+    private let defaults: UserDefaults
 
     var statusText: String {
         if isRegistered {
@@ -173,9 +174,14 @@ final class GlobalHotkeyController: ObservableObject {
         self.init(config: config, registrar: CarbonGlobalHotkeyRegistrar())
     }
 
-    init(config: HotkeyConfig, registrar: any GlobalHotkeyRegistering) {
+    init(
+        config: HotkeyConfig,
+        registrar: any GlobalHotkeyRegistering,
+        defaults: UserDefaults = .standard
+    ) {
         self.config = config.validationError == nil ? config : .default
         self.registrar = registrar
+        self.defaults = defaults
 
         switch registrar.installHandler(action: { [weak self] in
             self?.performAction()
@@ -191,7 +197,7 @@ final class GlobalHotkeyController: ObservableObject {
     func updateConfig(_ newConfig: HotkeyConfig) {
         guard let validationError = newConfig.validationError else {
             if newConfig == config, registrar.isRegistered {
-                newConfig.save()
+                newConfig.save(to: defaults)
                 isRegistered = true
                 errorMessage = nil
                 return
@@ -224,7 +230,7 @@ final class GlobalHotkeyController: ObservableObject {
         case .success:
             config = newConfig
             if persist {
-                newConfig.save()
+                newConfig.save(to: defaults)
             }
             isRegistered = true
             errorMessage = nil

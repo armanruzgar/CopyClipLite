@@ -9,8 +9,6 @@ extension XCTestCase {
     /// Returns a real, empty UserDefaults suite private to the running test.
     ///
     /// The suite is removed when the test finishes, whether it passed, failed or threw.
-    /// Removing the persistent domain is not enough on its own: cfprefsd keeps a plist
-    /// for every domain that was ever written, so the cleanup also deletes that file.
     /// The cleanup runs as a teardown block, after the test method has returned and
     /// released the objects it created with these defaults.
     func makeIsolatedDefaults() -> UserDefaults {
@@ -38,11 +36,18 @@ enum IsolatedTestDefaults {
             "Refusing to remove a preference domain the tests did not create: \(suiteName)"
         )
         if let defaults = UserDefaults(suiteName: suiteName) {
-            // Flush writes still queued for cfprefsd so they cannot land after the removal.
-            defaults.synchronize()
-            defaults.removePersistentDomain(forName: suiteName)
+            // removePersistentDomain(forName:) is deliberately not used: it only marks the
+            // domain empty in this process, and that change reaches disk later (at the
+            // latest when the process exits), recreating an empty plist after the file
+            // below was deleted. Removing each key is written through by synchronize().
+            let keys: [String] = defaults.persistentDomain(forName: suiteName)
+                .map { Array($0.keys) } ?? []
+            for key in keys {
+                defaults.removeObject(forKey: key)
+            }
             defaults.synchronize()
         }
+        // cfprefsd keeps a plist for every domain that was ever written, even once empty.
         try? FileManager.default.removeItem(at: preferencesFileURL(forSuiteName: suiteName))
     }
 }

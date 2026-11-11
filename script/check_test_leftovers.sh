@@ -73,8 +73,10 @@ case "$MODE" in
         fi
       done <"$STATE_DIR/preference-leftovers.txt"
       echo "-- empty files: $empty_count"
-      echo "-- files:"
-      cat "$STATE_DIR/preference-leftovers.txt"
+      echo "-- files (modification time):"
+      while IFS= read -r name; do
+        echo "$(stat -f '%Sm' -t '%H:%M:%S' "$PREFERENCES_DIR/$name") $name"
+      done <"$STATE_DIR/preference-leftovers.txt"
       if [[ "${COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS:-0}" == "1" ]]; then
         echo "::error::The test run left $leftover_count preference files behind."
         status=1

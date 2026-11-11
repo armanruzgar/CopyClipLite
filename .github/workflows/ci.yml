@@ -39,7 +39,10 @@ jobs:
       - name: Probe cfprefsd cleanup behaviour (temporary)
         if: always()
         continue-on-error: true
-        run: swift script/tests/defaults_probe.swift
+        run: |
+          swift script/tests/defaults_probe.swift write "$RUNNER_TEMP/defaults-probe.txt"
+          sleep 5
+          swift script/tests/defaults_probe.swift check "$RUNNER_TEMP/defaults-probe.txt"
       - name: Enforce strict concurrency warnings
         run: swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
       - name: Build local release artifact
