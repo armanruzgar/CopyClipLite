@@ -124,6 +124,8 @@ Everything lives here:
 ~/Library/Application Support/CopyClipLite/
 ├── clipboard-history.json                 # the history itself
 ├── Images/                                # image clips, one PNG each
+├── RichText/                              # RTF and HTML formatting of text clips
+├── Recovery-*/                            # damaged history set aside, last 2 kept
 └── clipboard-history.pre-import-*.json    # automatic pre-import backups, capped at 5
 ```
 

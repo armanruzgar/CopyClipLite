@@ -258,45 +258,46 @@ struct ClipboardItem: Identifiable, Codable, Hashable, Sendable {
         let persistedLink = persisted.linkURL.map {
             ClipboardLinkContent(url: $0, title: persisted.linkTitle)
         }
+        let itemID = id
+        let resolver = decoder.userInfo[.clipboardRichTextResolver] as? ClipboardRichTextResolver
+        func textContent() -> ClipboardContent {
+            .text(
+                ClipboardTextContent(
+                    text: text,
+                    rtfData: Self.richText(
+                        .rtf,
+                        itemID: itemID,
+                        inlineData: persisted.rtfData,
+                        fileName: persisted.rtfFileName,
+                        resolver: resolver
+                    ),
+                    htmlData: Self.richText(
+                        .html,
+                        itemID: itemID,
+                        inlineData: persisted.htmlData,
+                        fileName: persisted.htmlFileName,
+                        resolver: resolver
+                    )
+                )
+            )
+        }
         switch Self.normalizedContentKind(
             decodedContentKind,
             image: image,
             link: persistedLink
         ) {
         case .text:
-            content = .text(
-                ClipboardTextContent(
-                    text: text,
-                    rtfData: persisted.rtfData,
-                    htmlData: persisted.htmlData
-                )
-            )
+            content = textContent()
         case .image:
-            guard let image else {
-                content = .text(
-                    ClipboardTextContent(
-                        text: text,
-                        rtfData: persisted.rtfData,
-                        htmlData: persisted.htmlData
-                    )
+            if let image {
+                content = .image(
+                    ClipboardImageContent(associatedText: text, payload: image)
                 )
-                break
+            } else {
+                content = textContent()
             }
-            content = .image(
-                ClipboardImageContent(associatedText: text, payload: image)
-            )
         case .link:
-            guard let persistedLink else {
-                content = .text(
-                    ClipboardTextContent(
-                        text: text,
-                        rtfData: persisted.rtfData,
-                        htmlData: persisted.htmlData
-                    )
-                )
-                break
-            }
-            content = .link(persistedLink)
+            content = persistedLink.map(ClipboardContent.link) ?? textContent()
         }
         createdAt = persisted.createdAt ?? Date()
         lastCopiedAt = persisted.lastCopiedAt ?? Date()
@@ -306,6 +307,9 @@ struct ClipboardItem: Identifiable, Codable, Hashable, Sendable {
     }
 
     func encode(to encoder: Encoder) throws {
+        let fileNames = (
+            encoder.userInfo[.clipboardRichTextFileNames] as? [UUID: ClipboardRichTextFileNames]
+        )?[id]
         try PersistedClipboardItem(
             id: id,
             text: text,
@@ -313,8 +317,10 @@ struct ClipboardItem: Identifiable, Codable, Hashable, Sendable {
             linkURL: link?.url,
             linkTitle: link?.title,
             image: image,
-            rtfData: rtfData,
-            htmlData: htmlData,
+            rtfData: fileNames?.rtf == nil ? rtfData : nil,
+            rtfFileName: fileNames?.rtf,
+            htmlData: fileNames?.html == nil ? htmlData : nil,
+            htmlFileName: fileNames?.html,
             createdAt: createdAt,
             lastCopiedAt: lastCopiedAt,
             isPinned: isPinned,
@@ -404,6 +410,17 @@ struct ClipboardItem: Identifiable, Codable, Hashable, Sendable {
         return .text
     }
 
+    private static func richText(
+        _ kind: ClipboardRichTextKind,
+        itemID: UUID,
+        inlineData: Data?,
+        fileName: String?,
+        resolver: ClipboardRichTextResolver?
+    ) -> Data? {
+        guard let resolver else { return inlineData }
+        return resolver.resolve(kind, itemID: itemID, inlineData: inlineData, fileName: fileName)
+    }
+
     private static func normalizedCopyCount(_ copyCount: Int) -> Int {
         min(max(copyCount, 1), maximumCopyCount)
     }
@@ -434,7 +451,9 @@ private struct PersistedClipboardItem: Codable {
     let linkTitle: String?
     let image: ClipboardImagePayload?
     let rtfData: Data?
+    let rtfFileName: String?
     let htmlData: Data?
+    let htmlFileName: String?
     let createdAt: Date?
     let lastCopiedAt: Date?
     let isPinned: Bool?

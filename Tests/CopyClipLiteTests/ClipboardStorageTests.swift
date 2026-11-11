@@ -957,7 +957,7 @@ final class ClipboardStorageTests: XCTestCase {
         XCTAssertGreaterThan(inventory.totalByteCount, 0)
     }
 
-    func testRecoveryDirectoriesAreCappedAtFiveMostRecentBackups() throws {
+    func testRecoveryDirectoriesAreCappedAtTwoMostRecentBackups() throws {
         let directory = try makeTemporaryDirectory()
         let storage = ClipboardStorage(appDirectory: directory)
         var recoveryURLs: [URL] = []
@@ -976,10 +976,10 @@ final class ClipboardStorageTests: XCTestCase {
         }
 
         let inventory = try storage.backupInventory()
-        XCTAssertEqual(inventory.count, 5)
+        XCTAssertEqual(inventory.count, 2)
         XCTAssertEqual(
             Set(inventory.urls.map(\.lastPathComponent)),
-            Set(recoveryURLs.suffix(5).map(\.lastPathComponent))
+            Set(recoveryURLs.suffix(2).map(\.lastPathComponent))
         )
     }
 

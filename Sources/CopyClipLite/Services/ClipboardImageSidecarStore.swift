@@ -216,20 +216,6 @@ struct ClipboardImageSidecarStore: @unchecked Sendable {
     }
 
     private func safeURL(for fileName: String) -> URL? {
-        guard !fileName.isEmpty,
-              fileName != ".",
-              fileName != "..",
-              !fileName.contains("/"),
-              !fileName.contains("\\"),
-              URL(fileURLWithPath: fileName).lastPathComponent == fileName else {
-            return nil
-        }
-        let baseURL = directoryURL.standardizedFileURL
-        let candidateURL = baseURL.appendingPathComponent(
-            fileName,
-            isDirectory: false
-        ).standardizedFileURL
-        guard candidateURL.deletingLastPathComponent() == baseURL else { return nil }
-        return candidateURL
+        ClipboardSidecarPath.safeURL(for: fileName, in: directoryURL)
     }
 }

@@ -57,6 +57,10 @@ enum ClipboardStorageFaultPoint: Equatable {
     case imageWriteCompleted
     /// Immediately before staging the next manifest.
     case manifestWrite
+    /// Immediately before writing an RTF or HTML sidecar.
+    case richTextWrite
+    /// Immediately after a rich-text sidecar has been atomically written.
+    case richTextWriteCompleted
     /// After the complete manifest is staged, immediately before its atomic commit.
     case manifestWriteCompleted
 }
@@ -67,14 +71,18 @@ struct ClipboardStorage: @unchecked Sendable {
     static let maximumImportedTextCharacters = 20_000
     static let maximumImportedImageBytes = 10 * 1024 * 1024
     static let maximumImportedRichTextBytes = 10 * 1024 * 1024
-    private static let maximumRetainedBackups = 5
+    private static let maximumRetainedPreImportBackups = 5
+    // Each recovery folder can hold a full copy of the image and rich-text sidecars.
+    private static let maximumRetainedRecoveryFolders = 2
 
     let fileURL: URL
     let imageDirectoryURL: URL
+    let richTextDirectoryURL: URL
 
     private let fileManager: FileManager
     private let faultInjector: ((ClipboardStorageFaultPoint) throws -> Void)?
     private let imageSidecars: ClipboardImageSidecarStore
+    private let richTextSidecars: ClipboardRichTextSidecarStore
     private let lock = NSRecursiveLock()
     private let state = ClipboardStorageState()
 
@@ -87,19 +95,28 @@ struct ClipboardStorage: @unchecked Sendable {
     ) {
         let appDirectory = appDirectory ?? Self.defaultAppDirectory(fileManager: fileManager)
         let imageDirectoryURL = appDirectory.appendingPathComponent("Images", isDirectory: true)
+        let richTextDirectoryURL = appDirectory.appendingPathComponent("RichText", isDirectory: true)
         self.fileManager = fileManager
         self.faultInjector = faultInjector
         self.imageDirectoryURL = imageDirectoryURL
+        self.richTextDirectoryURL = richTextDirectoryURL
         self.imageSidecars = ClipboardImageSidecarStore(
             directoryURL: imageDirectoryURL,
             fileManager: fileManager,
             faultInjector: faultInjector
         )
+        self.richTextSidecars = ClipboardRichTextSidecarStore(
+            directoryURL: richTextDirectoryURL,
+            fileManager: fileManager,
+            faultInjector: faultInjector
+        )
 
         try? fileManager.createDirectory(at: appDirectory, withIntermediateDirectories: true)
-        try? fileManager.createDirectory(at: imageDirectoryURL, withIntermediateDirectories: true)
         try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: appDirectory.path)
-        try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: imageDirectoryURL.path)
+        for directoryURL in [imageDirectoryURL, richTextDirectoryURL] {
+            try? fileManager.createDirectory(at: directoryURL, withIntermediateDirectories: true)
+            try? fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directoryURL.path)
+        }
 
         fileURL = appDirectory.appendingPathComponent("clipboard-history.json")
     }
@@ -114,7 +131,7 @@ struct ClipboardStorage: @unchecked Sendable {
 
         guard fileManager.fileExists(atPath: fileURL.path) else {
             state.allowWrites()
-            removeUnreferencedImages(keeping: [])
+            removeUnreferencedSidecars(keeping: [], richTextFileNames: [:])
             return .success([])
         }
 
@@ -126,7 +143,9 @@ struct ClipboardStorage: @unchecked Sendable {
             return .failure(.unreadableHistory)
         }
 
+        let richTextResolver = richTextSidecars.makeResolver()
         let decoder = JSONDecoder()
+        decoder.userInfo[.clipboardRichTextResolver] = richTextResolver
         var items: [ClipboardItem]
         do {
             items = try decoder.decode([ClipboardItem].self, from: data)
@@ -155,11 +174,18 @@ struct ClipboardStorage: @unchecked Sendable {
                 newlyCreatedFiles: &newlyCreatedFiles
             )
             let wasHydrated = imageSidecars.hydrateMetadata(in: &items)
-            if wasExternalized || wasHydrated || Self.requiresNormalization(data) {
-                try writeHistory(items)
+            richTextSidecars.remember(richTextResolver)
+            let richTextFileNames = try richTextSidecars.externalize(
+                items,
+                newlyCreatedFiles: &newlyCreatedFiles
+            )
+            // Differs for legacy inline rich text and for references to missing files.
+            let richTextMoved = richTextFileNames != richTextResolver.referencedFileNames
+            if wasExternalized || wasHydrated || richTextMoved || Self.requiresNormalization(data) {
+                try writeHistory(items, richTextFileNames: richTextFileNames)
             }
             // Retry previous cleanup failures even when the manifest needs no migration.
-            removeUnreferencedImages(keeping: items)
+            removeUnreferencedSidecars(keeping: items, richTextFileNames: richTextFileNames)
             state.allowWrites()
             return .success(items)
         } catch {
@@ -185,30 +211,44 @@ struct ClipboardStorage: @unchecked Sendable {
 
         var persistedItems = items
         var newlyCreatedFiles = Set<URL>()
+        let richTextFileNames: [UUID: ClipboardRichTextFileNames]
         do {
             try imageSidecars.externalizeImages(
                 in: &persistedItems,
                 newlyCreatedFiles: &newlyCreatedFiles
             )
-            try writeHistory(persistedItems)
+            richTextFileNames = try richTextSidecars.externalize(
+                persistedItems,
+                newlyCreatedFiles: &newlyCreatedFiles
+            )
+            try writeHistory(persistedItems, richTextFileNames: richTextFileNames)
         } catch {
             imageSidecars.removeFiles(newlyCreatedFiles)
             throw ClipboardStorageError.persistenceFailed
         }
 
-        removeUnreferencedImages(keeping: persistedItems)
+        removeUnreferencedSidecars(keeping: persistedItems, richTextFileNames: richTextFileNames)
         return persistedItems
     }
 
-    private func removeUnreferencedImages(keeping items: [ClipboardItem]) {
+    private func removeUnreferencedSidecars(
+        keeping items: [ClipboardItem],
+        richTextFileNames: [UUID: ClipboardRichTextFileNames]
+    ) {
+        var failed = false
         do {
             try imageSidecars.removeUnreferencedFiles(keeping: items)
-            state.setImageCleanupPending(false)
         } catch {
-            // The manifest is already committed. Report cleanup separately so callers
-            // never roll back a successful import or resurrect logically deleted rows.
-            state.setImageCleanupPending(true)
+            failed = true
         }
+        do {
+            try richTextSidecars.removeUnreferencedFiles(keeping: richTextFileNames)
+        } catch {
+            failed = true
+        }
+        // The manifest is already committed. Report cleanup separately so callers
+        // never roll back a successful import or resurrect logically deleted rows.
+        state.setImageCleanupPending(failed)
     }
 
     func imageData(for item: ClipboardItem) -> Data? {
@@ -376,7 +416,7 @@ struct ClipboardStorage: @unchecked Sendable {
         try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backupURL.path)
         try removeExcessBackups(
             matching: Self.isPreImportBackup,
-            keeping: Self.maximumRetainedBackups
+            keeping: Self.maximumRetainedPreImportBackups
         )
         return backupURL
     }
@@ -401,9 +441,13 @@ struct ClipboardStorage: @unchecked Sendable {
         }
     }
 
-    private func writeHistory(_ items: [ClipboardItem]) throws {
+    private func writeHistory(
+        _ items: [ClipboardItem],
+        richTextFileNames: [UUID: ClipboardRichTextFileNames]
+    ) throws {
         let encoder = JSONEncoder()
         encoder.outputFormatting = .sortedKeys
+        encoder.userInfo[.clipboardRichTextFileNames] = richTextFileNames
 
         let data = try encoder.encode(items)
         try faultInjector?(.manifestWrite)
@@ -433,24 +477,41 @@ struct ClipboardStorage: @unchecked Sendable {
             isDirectory: true
         )
         let backupURL = recoveryURL.appendingPathComponent(fileURL.lastPathComponent)
+        let sidecarDirectories = [imageDirectoryURL, richTextDirectoryURL].map { directoryURL in
+            (
+                live: directoryURL,
+                quarantined: recoveryURL.appendingPathComponent(
+                    directoryURL.lastPathComponent,
+                    isDirectory: true
+                )
+            )
+        }
 
         do {
             try fileManager.createDirectory(at: recoveryURL, withIntermediateDirectories: false)
             try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: recoveryURL.path)
             try fileManager.moveItem(at: fileURL, to: backupURL)
-            if fileManager.fileExists(atPath: imageDirectoryURL.path) {
-                try fileManager.moveItem(
-                    at: imageDirectoryURL,
-                    to: recoveryURL.appendingPathComponent("Images", isDirectory: true)
+            for directory in sidecarDirectories
+            where fileManager.fileExists(atPath: directory.live.path) {
+                try fileManager.moveItem(at: directory.live, to: directory.quarantined)
+            }
+            for directory in sidecarDirectories {
+                try fileManager.createDirectory(at: directory.live, withIntermediateDirectories: true)
+                try fileManager.setAttributes(
+                    [.posixPermissions: 0o700],
+                    ofItemAtPath: directory.live.path
                 )
             }
-            try fileManager.createDirectory(at: imageDirectoryURL, withIntermediateDirectories: true)
-            try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: imageDirectoryURL.path)
         } catch {
-            let quarantinedImagesURL = recoveryURL.appendingPathComponent("Images", isDirectory: true)
-            if fileManager.fileExists(atPath: quarantinedImagesURL.path),
-               !fileManager.fileExists(atPath: imageDirectoryURL.path) {
-                try? fileManager.moveItem(at: quarantinedImagesURL, to: imageDirectoryURL)
+            for directory in sidecarDirectories
+            where fileManager.fileExists(atPath: directory.quarantined.path) {
+                // A replacement directory may already exist if the failure came later.
+                if (try? fileManager.contentsOfDirectory(atPath: directory.live.path))?.isEmpty == true {
+                    try? fileManager.removeItem(at: directory.live)
+                }
+                if !fileManager.fileExists(atPath: directory.live.path) {
+                    try? fileManager.moveItem(at: directory.quarantined, to: directory.live)
+                }
             }
             if fileManager.fileExists(atPath: backupURL.path),
                !fileManager.fileExists(atPath: fileURL.path) {
@@ -462,7 +523,7 @@ struct ClipboardStorage: @unchecked Sendable {
         try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: backupURL.path)
         try? removeExcessBackups(
             matching: Self.isRecoveryBackup,
-            keeping: Self.maximumRetainedBackups
+            keeping: Self.maximumRetainedRecoveryFolders
         )
         return recoveryURL
     }
