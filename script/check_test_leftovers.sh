@@ -4,7 +4,8 @@
 #   check_test_leftovers.sh snapshot <dir>   capture state before the tests
 #   check_test_leftovers.sh report <dir>     print what changed after the tests
 #
-# Set COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS=1 to fail when test preference files exist.
+# Set COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS=1 to fail when test preference files or test
+# UserDefaults directories (CopyClipLiteTestDefaults-*) exist after the run.
 set -euo pipefail
 
 MODE="${1:?usage: check_test_leftovers.sh snapshot|report <dir>}"
@@ -30,6 +31,7 @@ list_app_support() {
 }
 
 test_preference_pattern='CopyClip|Tests[-.][0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\.plist$'
+test_defaults_prefix='CopyClipLiteTestDefaults-'
 installed_app_preferences='^(io\.github\.38st\.CopyClipLite|io\.github\.38st\.CopyClipLite\.preview|com\.local\.CopyClipLite)\.plist$'
 
 case "$MODE" in
@@ -91,6 +93,18 @@ case "$MODE" in
     done <"$STATE_DIR/other-preferences.txt"
 
     list_temp >"$STATE_DIR/temp-after.txt"
+    { grep -E "^$test_defaults_prefix" "$STATE_DIR/temp-after.txt" || true; } >"$STATE_DIR/defaults-dirs.txt"
+    defaults_dir_count="$(wc -l <"$STATE_DIR/defaults-dirs.txt" | tr -d ' ')"
+    echo "== Test UserDefaults directories in $TEMP_DIR: $defaults_dir_count"
+    if [[ "$defaults_dir_count" -gt 0 ]]; then
+      while IFS= read -r name; do
+        echo "  $name: $(find "${TEMP_DIR%/}/$name" -mindepth 1 2>/dev/null | sed "s|^${TEMP_DIR%/}/$name/||" | tr '\n' ' ')"
+      done <"$STATE_DIR/defaults-dirs.txt"
+      if [[ "${COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS:-0}" == "1" ]]; then
+        echo "::error::The test run left $defaults_dir_count UserDefaults directories behind."
+        status=1
+      fi
+    fi
     comm -13 "$STATE_DIR/temp.txt" "$STATE_DIR/temp-after.txt" >"$STATE_DIR/temp-new.txt"
     echo "== New entries in $TEMP_DIR: $(wc -l <"$STATE_DIR/temp-new.txt" | tr -d ' ')"
     sed -E 's/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/<UUID>/g' \
