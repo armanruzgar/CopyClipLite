@@ -226,6 +226,7 @@ final class SelectiveFailurePasteboardWriter: ClipboardPasteboardWriting, @unche
 
 final class StubStorePasteboard: ClipboardStorePasteboard {
     private var storedValues: [NSPasteboard.PasteboardType: Data] = [:]
+    private var storedItemStrings: [NSPasteboard.PasteboardType: [String]] = [:]
     private(set) var changeCount = 0
 
     var types: [NSPasteboard.PasteboardType]? {
@@ -240,6 +241,19 @@ final class StubStorePasteboard: ClipboardStorePasteboard {
         storedValues[dataType].flatMap { String(data: $0, encoding: .utf8) }
     }
 
+    func itemStrings(forType dataType: NSPasteboard.PasteboardType) -> [String] {
+        storedItemStrings[dataType] ?? string(forType: dataType).map { [$0] } ?? []
+    }
+
+    /// Simulates several pasteboard items that each carry a value for `dataType`.
+    @discardableResult
+    func setItemStrings(_ strings: [String], forType dataType: NSPasteboard.PasteboardType) -> Bool {
+        guard let first = strings.first else { return false }
+        setString(first, forType: dataType)
+        storedItemStrings[dataType] = strings
+        return true
+    }
+
     @discardableResult
     func clearContents() -> Int {
         clearPasteboardContents()
@@ -248,6 +262,7 @@ final class StubStorePasteboard: ClipboardStorePasteboard {
     @discardableResult
     func clearPasteboardContents() -> Int {
         storedValues.removeAll()
+        storedItemStrings.removeAll()
         changeCount += 1
         return changeCount
     }
@@ -268,6 +283,7 @@ final class StubStorePasteboard: ClipboardStorePasteboard {
     @discardableResult
     func setData(_ data: Data, forType dataType: NSPasteboard.PasteboardType) -> Bool {
         storedValues[dataType] = data
+        storedItemStrings[dataType] = nil
         changeCount += 1
         return true
     }

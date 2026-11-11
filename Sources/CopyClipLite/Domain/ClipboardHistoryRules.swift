@@ -177,6 +177,24 @@ enum ClipboardHistoryRules {
         return items
     }
 
+    /// Records several links copied together. They share one capture time, so the
+    /// first link ends up on top, matching the order they were copied in.
+    static func recordingLinks(
+        _ links: [ClipboardLinkContent],
+        sourceApplication: ClipboardSourceApplication?,
+        capturedAt: Date,
+        in currentItems: [ClipboardItem]
+    ) -> [ClipboardItem] {
+        links.reversed().reduce(currentItems) { items, link in
+            recordingLink(
+                link,
+                sourceApplication: sourceApplication,
+                capturedAt: capturedAt,
+                in: items
+            )
+        }
+    }
+
     private static func contentMatchesForImport(
         _ existingItem: ClipboardItem,
         _ importedItem: ClipboardItem

@@ -19,6 +19,7 @@ final class ClipboardStore: ObservableObject {
         static let retentionPolicy = "retentionPolicy"
         static let keepPinnedOnClear = "keepPinnedOnClear"
         static let clearUnpinnedOnQuit = "clearUnpinnedOnQuit"
+        static let quitCleanupPending = "quitCleanupPending"
         static let monitoringEnabled = "monitoringEnabled"
         static let monitoringPausedUntil = "monitoringPausedUntil"
         static let directPasteEnabled = "directPasteEnabled"
@@ -56,6 +57,7 @@ final class ClipboardStore: ObservableObject {
     @Published var clearUnpinnedOnQuit: Bool {
         didSet {
             defaults.set(clearUnpinnedOnQuit, forKey: DefaultsKey.clearUnpinnedOnQuit)
+            Self.setQuitCleanupPending(clearUnpinnedOnQuit, defaults: defaults)
         }
     }
     @Published var directPasteEnabled: Bool {
@@ -92,6 +94,7 @@ final class ClipboardStore: ObservableObject {
     private var lastActiveApplication: ClipboardSourceApplication?
     private var persistenceBlockedByLoadFailure: Bool
     private var persistenceLoadFailureMessage: String?
+    private var loadRecoveryMessage: String?
     nonisolated(unsafe) private var workspaceActivationObserver: NotificationObserverToken?
     private var clearCopiedIndicatorTask: Task<Void, Never>?
     private let persistenceCoordinator: ClipboardPersistenceCoordinator
@@ -133,6 +136,16 @@ final class ClipboardStore: ObservableObject {
                     thumbnailLoader(item)
                 }.value
                 guard let self else { return }
+                // A save scheduled now would hold pre-import items and could land after the commit.
+                guard !self.isTransferBusy else {
+                    self.thumbnailCache.finishLoading(
+                        id: item.id,
+                        load: load,
+                        data: nil,
+                        now: self.clock.now()
+                    )
+                    return
+                }
                 guard let result,
                       let itemIndex = self.items.firstIndex(where: { $0.id == item.id }),
                       self.items[itemIndex].image?.contentHash == expectedContentHash,
@@ -236,8 +249,15 @@ final class ClipboardStore: ObservableObject {
         case let .failure(error):
             self.items = []
             self.storageErrorMessage = error.localizedDescription
-            self.persistenceBlockedByLoadFailure = true
-            self.persistenceLoadFailureMessage = error.localizedDescription
+            if case .invalidHistory(backupFileName: .some) = error {
+                // The damaged file was quarantined and storage accepts writes again.
+                self.persistenceBlockedByLoadFailure = false
+                self.persistenceLoadFailureMessage = nil
+                self.loadRecoveryMessage = error.localizedDescription
+            } else {
+                self.persistenceBlockedByLoadFailure = true
+                self.persistenceLoadFailureMessage = error.localizedDescription
+            }
         }
         self.captureWarning = nil
         let storedHistoryLimit = defaults.object(forKey: DefaultsKey.historyLimit) as? Int
@@ -266,6 +286,13 @@ final class ClipboardStore: ObservableObject {
         self.lastPasteboardChangeCount = pasteboard.changeCount
         self.transferObservation = transferCoordinator.objectWillChange.sink { [weak self] in
             self?.objectWillChange.send()
+        }
+
+        if clearUnpinnedOnQuit {
+            if defaults.bool(forKey: DefaultsKey.quitCleanupPending) {
+                completeInterruptedQuitCleanup()
+            }
+            Self.setQuitCleanupPending(true, defaults: defaults)
         }
 
         let oldItems = items
@@ -466,11 +493,13 @@ final class ClipboardStore: ObservableObject {
             plan: plan,
             strategy: strategy
         )
+        invalidatePendingPersist()
         items = commit.items
         thumbnailCache = ClipboardThumbnailCache()
         clearExportLimitWarningIfResolved()
         persistenceBlockedByLoadFailure = false
         persistenceLoadFailureMessage = nil
+        loadRecoveryMessage = nil
         refreshImageCleanupStatus()
         return commit
     }
@@ -571,8 +600,14 @@ final class ClipboardStore: ObservableObject {
             existing.sourceApplication = item.sourceApplication ?? existing.sourceApplication
             items.insert(existing, at: 0)
         } else {
+            let now = clock.now()
             items.insert(
-                ClipboardItem(text: transformedText, sourceApplication: item.sourceApplication),
+                ClipboardItem(
+                    text: transformedText,
+                    createdAt: now,
+                    lastCopiedAt: now,
+                    sourceApplication: item.sourceApplication
+                ),
                 at: 0
             )
         }
@@ -733,7 +768,20 @@ final class ClipboardStore: ObservableObject {
             captureWarning = warning
         }
 
-        if let candidate = ClipboardCaptureReader.image(from: pasteboard) {
+        let fileURLs = ClipboardCaptureReader.fileURLs(from: pasteboard)
+        if fileURLs.count > 1 {
+            recordFiles(
+                fileURLs,
+                textWarning: capturedText.warning,
+                sourceApplication: sourceApplication,
+                capturedAt: clock.now()
+            )
+            return
+        }
+
+        if let candidate = ClipboardCaptureReader.image(from: pasteboard),
+           candidate.hasFileURLSource
+            || !ClipboardCaptureReader.hasRichTextCopy(pasteboard, snapshot: capturedText.snapshot) {
             let capturedAt = clock.now()
             processImageCandidate(
                 candidate,
@@ -846,6 +894,38 @@ final class ClipboardStore: ObservableObject {
         persist()
     }
 
+    private func recordFiles(
+        _ fileURLs: [URL],
+        textWarning: String?,
+        sourceApplication: ClipboardSourceApplication?,
+        capturedAt: Date
+    ) {
+        let limit = ClipboardCaptureReader.maximumCapturedFiles
+        let links = fileURLs.prefix(limit)
+            .map(ClipboardCaptureReader.fileLink(for:))
+            .filter { $0.url.absoluteString.count <= ClipboardStorage.maximumImportedTextCharacters }
+        guard !links.isEmpty else {
+            captureWarning = "A link clip was skipped because its URL exceeds 20,000 characters."
+            return
+        }
+
+        items = ClipboardHistoryRules.recordingLinks(
+            links,
+            sourceApplication: sourceApplication,
+            capturedAt: capturedAt,
+            in: items
+        )
+        pruneHistory()
+        persist()
+        if fileURLs.count > limit {
+            captureWarning = "Only the first \(limit) of \(fileURLs.count) copied files were saved."
+        } else if links.count < min(fileURLs.count, limit) {
+            captureWarning = "A link clip was skipped because its URL exceeds 20,000 characters."
+        } else {
+            captureWarning = textWarning
+        }
+    }
+
     @discardableResult
     nonisolated static func clearUnpinnedHistoryOnQuitIfNeeded(
         storage: any ClipboardHistoryRepository = ClipboardStorage(),
@@ -860,7 +940,9 @@ final class ClipboardStore: ObservableObject {
             let itemsToKeep = itemsAfterQuitCleanup(loadedItems)
             _ = try storage.saveValidated(itemsToKeep)
             try storage.purgeBackups()
-            return !storage.imageCleanupPending
+            guard !storage.imageCleanupPending else { return false }
+            setQuitCleanupPending(false, defaults: defaults)
+            return true
         } catch {
             return false
         }
@@ -883,7 +965,31 @@ final class ClipboardStore: ObservableObject {
             return false
         }
         let purgedBackups = purgeBackupsReportingFailure()
-        return purgedBackups && !imageCleanupPending
+        guard purgedBackups, !imageCleanupPending else { return false }
+        Self.setQuitCleanupPending(false, defaults: defaults)
+        return true
+    }
+
+    /// The previous session ended without finishing its quit cleanup (a crash,
+    /// force quit, or a failed save), so finish it before anything new is captured.
+    private func completeInterruptedQuitCleanup() {
+        guard !persistenceBlockedByLoadFailure else { return }
+        let previousItems = items
+        items = Self.itemsAfterQuitCleanup(items)
+        thumbnailCache = ClipboardThumbnailCache()
+        guard flushPendingPersistSynchronously() else {
+            items = previousItems
+            return
+        }
+        purgeBackupsReportingFailure()
+    }
+
+    nonisolated private static func setQuitCleanupPending(_ isPending: Bool, defaults: UserDefaults) {
+        if isPending {
+            defaults.set(true, forKey: DefaultsKey.quitCleanupPending)
+        } else {
+            defaults.removeObject(forKey: DefaultsKey.quitCleanupPending)
+        }
     }
 
     nonisolated private static func itemsAfterQuitCleanup(
@@ -1084,7 +1190,12 @@ final class ClipboardStore: ObservableObject {
 
     private func refreshImageCleanupStatus() {
         imageCleanupPending = storage.imageCleanupPending
-        storageErrorMessage = imageCleanupPending ? Self.imageCleanupErrorMessage : nil
+        if imageCleanupPending {
+            storageErrorMessage = Self.imageCleanupErrorMessage
+        } else if storageErrorMessage != loadRecoveryMessage {
+            // A recovered-history notice stays up until it is dismissed or replaced.
+            storageErrorMessage = nil
+        }
     }
 
     @discardableResult
@@ -1118,6 +1229,7 @@ final class ClipboardStore: ObservableObject {
 
     func dismissStorageError() {
         storageErrorMessage = nil
+        loadRecoveryMessage = nil
     }
 
     func dismissCaptureWarning() {

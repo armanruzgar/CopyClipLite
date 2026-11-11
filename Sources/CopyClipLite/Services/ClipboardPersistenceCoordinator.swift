@@ -114,6 +114,8 @@ final class ClipboardPersistenceCoordinator: @unchecked Sendable {
                         let loadedItems = try storage.loadResult().get().sorted {
                             $0.lastCopiedAt > $1.lastCopiedAt
                         }
+                        // A save scheduled during the commit holds pre-import items.
+                        self.invalidateScheduledSave()
                         continuation.resume(
                             returning: ClipboardImportCommit(
                                 backupURL: backupURL,

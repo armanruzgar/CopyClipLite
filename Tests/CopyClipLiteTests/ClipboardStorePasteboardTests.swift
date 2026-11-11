@@ -343,7 +343,7 @@ extension ClipboardStoreTests {
 
         store.pollPasteboardForChanges()
 
-        XCTAssertEqual(store.items.first?.text, "HTML only\n")
+        XCTAssertEqual(store.items.first?.text, "HTML only")
         XCTAssertEqual(store.items.first?.htmlData, html)
     }
 

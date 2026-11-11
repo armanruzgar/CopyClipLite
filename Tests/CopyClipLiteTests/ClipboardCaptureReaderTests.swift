@@ -59,6 +59,83 @@ final class ClipboardCaptureReaderTests: XCTestCase {
         XCTAssertNil(ClipboardCaptureReader.image(from: pasteboard))
     }
 
+    func testEveryFinderFileURLIsReadAndNoneGoesToTheImagePipeline() {
+        let pasteboard = makePasteboard()
+        let directory = FileManager.default.temporaryDirectory
+        let urls = ["a.txt", "b.png", "c.pdf"].map {
+            directory.appendingPathComponent("CopyClipLite-\(UUID().uuidString)-\($0)")
+        }
+        pasteboard.setItemStrings(urls.map(\.absoluteString), forType: .fileURL)
+
+        XCTAssertEqual(ClipboardCaptureReader.fileURLs(from: pasteboard).map(\.path), urls.map(\.path))
+        XCTAssertNil(ClipboardCaptureReader.image(from: pasteboard))
+        XCTAssertNil(ClipboardCaptureReader.link(from: pasteboard))
+    }
+
+    func testFileReferenceURLIsNormalisedToItsPath() throws {
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("CopyClipLite-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent("Quarterly Report.txt")
+        try Data("report".utf8).write(to: fileURL)
+        // Bridging to URL resolves the reference, so keep the NSURL to get Finder's form.
+        let referenceURL = try XCTUnwrap(
+            (fileURL as NSURL).perform(#selector(NSURL.fileReferenceURL))?
+                .takeUnretainedValue() as? NSURL
+        )
+        let referenceString = try XCTUnwrap(referenceURL.absoluteString)
+        XCTAssertTrue(referenceString.contains("/.file/id="))
+        let pasteboard = makePasteboard()
+        pasteboard.setString(referenceString, forType: .fileURL)
+
+        let link = try XCTUnwrap(ClipboardCaptureReader.link(from: pasteboard))
+
+        XCTAssertEqual(link.title, "Quarterly Report.txt")
+        XCTAssertEqual(
+            link.url.resolvingSymlinksInPath().path,
+            fileURL.resolvingSymlinksInPath().path
+        )
+    }
+
+    func testWebLinkTitleIsReadFromURLName() throws {
+        let urlName = NSPasteboard.PasteboardType("public.url-name")
+        let pasteboard = makePasteboard()
+        pasteboard.setString("https://example.com/article", forType: .URL)
+        pasteboard.setString("  An Example Article \n", forType: urlName)
+
+        XCTAssertEqual(ClipboardCaptureReader.link(from: pasteboard)?.title, "An Example Article")
+
+        pasteboard.setString("https://example.com/article", forType: urlName)
+        let untitled = try XCTUnwrap(ClipboardCaptureReader.link(from: pasteboard))
+        XCTAssertNil(untitled.title)
+
+        pasteboard.setString("   ", forType: urlName)
+        XCTAssertNil(ClipboardCaptureReader.link(from: pasteboard)?.title)
+    }
+
+    func testHTMLOnlyClipboardIsReadLocallyWithoutScriptsOrStyles() throws {
+        let pasteboard = makePasteboard()
+        let html = """
+        <html><head><title>Ignored</title><style>p { color: red; }</style></head>
+        <body><script>document.write("nope")</script><!-- note -->
+        <p>Fish &amp; Chips&nbsp;&#x2014; <img src="https://example.invalid/x.png">today</p>
+        <p>Second&#33; &lt;b&gt;</p></body></html>
+        """
+        pasteboard.setData(Data(html.utf8), forType: .html)
+
+        let snapshot = try XCTUnwrap(ClipboardCaptureReader.text(from: pasteboard).snapshot)
+
+        XCTAssertEqual(snapshot.text, "Fish & Chips — today\nSecond! <b>")
+        XCTAssertEqual(snapshot.htmlData, Data(html.utf8))
+        XCTAssertEqual(
+            ClipboardHTMLTextExtractor.plainText(
+                fromHTML: "<table><tr><td>A</td><td>B</td></tr></table>Mid<b>word</b>"
+            ),
+            "A B\nMidword"
+        )
+    }
+
     private func makePasteboard() -> StubCapturePasteboard {
         StubCapturePasteboard()
     }
@@ -96,6 +173,7 @@ final class ClipboardCaptureReaderTests: XCTestCase {
 
 private final class StubCapturePasteboard: ClipboardCapturePasteboard {
     private var values: [NSPasteboard.PasteboardType: Data] = [:]
+    private var itemValues: [NSPasteboard.PasteboardType: [String]] = [:]
 
     func data(forType dataType: NSPasteboard.PasteboardType) -> Data? {
         values[dataType]
@@ -105,11 +183,21 @@ private final class StubCapturePasteboard: ClipboardCapturePasteboard {
         values[dataType].flatMap { String(data: $0, encoding: .utf8) }
     }
 
+    func itemStrings(forType dataType: NSPasteboard.PasteboardType) -> [String] {
+        itemValues[dataType] ?? string(forType: dataType).map { [$0] } ?? []
+    }
+
     func setData(_ data: Data, forType dataType: NSPasteboard.PasteboardType) {
         values[dataType] = data
+        itemValues[dataType] = nil
+    }
+
+    func setItemStrings(_ strings: [String], forType dataType: NSPasteboard.PasteboardType) {
+        values[dataType] = strings.first.map { Data($0.utf8) }
+        itemValues[dataType] = strings
     }
 
     func setString(_ string: String, forType dataType: NSPasteboard.PasteboardType) {
-        values[dataType] = Data(string.utf8)
+        setData(Data(string.utf8), forType: dataType)
     }
 }
