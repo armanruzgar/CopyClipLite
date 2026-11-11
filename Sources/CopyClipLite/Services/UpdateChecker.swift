@@ -172,6 +172,7 @@ final class UpdateChecker: ObservableObject {
     }
 
     @Published private(set) var state: State = .idle
+    private(set) var checkTask: Task<Void, Never>?
 
     private let loader: any UpdateFeedLoading
     private let feedURL: URL?
@@ -209,7 +210,7 @@ final class UpdateChecker: ObservableObject {
         }
 
         state = .checking
-        Task {
+        checkTask = Task {
             do {
                 let release = try await loader.latestRelease(
                     from: feedURL,

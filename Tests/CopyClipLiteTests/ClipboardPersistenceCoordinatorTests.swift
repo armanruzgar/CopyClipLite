@@ -7,7 +7,13 @@ final class ClipboardPersistenceCoordinatorTests: XCTestCase {
     func testScheduledSaveCoalescesToLatestSnapshot() async throws {
         let storage = ClipboardStorage(appDirectory: try temporaryDirectory())
         _ = storage.loadResult()
-        let coordinator = ClipboardPersistenceCoordinator(storage: storage)
+        let queue = DispatchQueue(label: "ClipboardPersistenceCoordinatorTests")
+        let delayedSaves = DelayedSaves()
+        let coordinator = ClipboardPersistenceCoordinator(
+            storage: storage,
+            queue: queue,
+            scheduleDelayedSave: { delayedSaves.append($0) }
+        )
         let saved = expectation(description: "latest save completed")
 
         coordinator.scheduleSave([ClipboardItem(text: "old")]) { _ in
@@ -19,21 +25,35 @@ final class ClipboardPersistenceCoordinatorTests: XCTestCase {
             }
             saved.fulfill()
         }
+        XCTAssertEqual(delayedSaves.count, 2)
 
-        await fulfillment(of: [saved], timeout: 2)
+        // Both delays elapse; the superseded save runs first if it runs at all.
+        delayedSaves.fire(on: queue)
+        await fulfillment(of: [saved], timeout: 10)
         XCTAssertEqual(storage.load().map(\.text), ["latest"])
     }
 
     func testFlushInvalidatesDelayedSave() async throws {
         let storage = ClipboardStorage(appDirectory: try temporaryDirectory())
         _ = storage.loadResult()
-        let coordinator = ClipboardPersistenceCoordinator(storage: storage)
+        let queue = DispatchQueue(label: "ClipboardPersistenceCoordinatorTests")
+        let delayedSaves = DelayedSaves()
+        let coordinator = ClipboardPersistenceCoordinator(
+            storage: storage,
+            queue: queue,
+            scheduleDelayedSave: { delayedSaves.append($0) }
+        )
         coordinator.scheduleSave([ClipboardItem(text: "delayed")]) { _ in
             XCTFail("Invalidated delayed save must not complete")
         }
 
         let flushed = try await coordinator.flush([ClipboardItem(text: "flushed")])
-        try await Task.sleep(nanoseconds: 250_000_000)
+        delayedSaves.fire(on: queue)
+        // Drain the queue, then the main actor, where the delayed save's completion would be queued.
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume() }
+        }
+        await MainActor.run {}
 
         XCTAssertEqual(flushed.map(\.text), ["flushed"])
         XCTAssertEqual(storage.load().map(\.text), ["flushed"])
@@ -55,6 +75,28 @@ final class ClipboardPersistenceCoordinatorTests: XCTestCase {
         XCTAssertEqual(commit.items, candidate)
         XCTAssertEqual(storage.load(), candidate)
         XCTAssertTrue(FileManager.default.fileExists(atPath: commit.backupURL.path))
+    }
+
+    /// Holds delayed saves so a test decides when their delay has elapsed.
+    private final class DelayedSaves: @unchecked Sendable {
+        private let lock = NSLock()
+        private var workItems: [DispatchWorkItem] = []
+
+        var count: Int {
+            lock.withLock { workItems.count }
+        }
+
+        func append(_ workItem: DispatchWorkItem) {
+            lock.withLock { workItems.append(workItem) }
+        }
+
+        func fire(on queue: DispatchQueue) {
+            let due = lock.withLock {
+                defer { workItems.removeAll() }
+                return workItems
+            }
+            due.forEach { queue.async(execute: $0) }
+        }
     }
 
     private func temporaryDirectory() throws -> URL {

@@ -146,19 +146,16 @@ extension ClipboardStoreTests {
         )
 
         XCTAssertFalse(store.isMonitoringEnabled)
-        for _ in 0..<100 where clock.waitingCount == 0 {
-            await Task.yield()
-        }
+        await fulfillment(of: [clock.expectSleepers()], timeout: 10)
         XCTAssertEqual(clock.waitingCount, 1)
 
         clock.advance(by: 59)
-        await Task.yield()
+        // Still parked, so the resume task has nothing to run.
+        XCTAssertEqual(clock.waitingCount, 1)
         XCTAssertFalse(store.isMonitoringEnabled)
 
         clock.advance(by: 1)
-        for _ in 0..<100 where !store.isMonitoringEnabled {
-            await Task.yield()
-        }
+        await waitForState(of: store, "monitoring resumed") { store.isMonitoringEnabled }
         XCTAssertTrue(store.isMonitoringEnabled)
         XCTAssertNil(store.monitoringPausedUntil)
     }
@@ -177,17 +174,17 @@ extension ClipboardStoreTests {
             )
         )
         store.pauseMonitoring(for: .fiveMinutes)
-        for _ in 0..<100 where clock.waitingCount == 0 { await Task.yield() }
+        await fulfillment(of: [clock.expectSleepers()], timeout: 10)
 
         clock.setNow(base.addingTimeInterval(-3_600))
         clock.wakeAllSleepers()
-        for _ in 0..<100 where clock.waitingCount == 0 { await Task.yield() }
+        await fulfillment(of: [clock.expectSleepers()], timeout: 10)
         XCTAssertFalse(store.isMonitoringEnabled)
         XCTAssertEqual(clock.waitingCount, 1)
 
         clock.setNow(base.addingTimeInterval(301))
         clock.wakeAllSleepers()
-        for _ in 0..<100 where !store.isMonitoringEnabled { await Task.yield() }
+        await waitForState(of: store, "monitoring resumed") { store.isMonitoringEnabled }
         XCTAssertTrue(store.isMonitoringEnabled)
     }
 

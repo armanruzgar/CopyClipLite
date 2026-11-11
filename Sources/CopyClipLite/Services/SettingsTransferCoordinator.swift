@@ -13,6 +13,8 @@ final class SettingsTransferCoordinator: ObservableObject {
     private var task: Task<Void, Never>?
     private var droppedLoadProgress: Progress?
     private var droppedLoadGeneration: UInt64 = 0
+    /// Runs once a dropped file's provider callback has been handled, including a stale one that is ignored.
+    var droppedLoadCallbackHandled: (@MainActor () -> Void)?
 
     func clearFeedback() {
         message = nil
@@ -68,8 +70,9 @@ final class SettingsTransferCoordinator: ObservableObject {
         ) { [weak self, store] data, error in
             let loadErrorDescription = error?.localizedDescription
             Task { @MainActor [weak self, store, data, loadErrorDescription, sourceFileName] in
-                guard let self,
-                      self.droppedLoadGeneration == generation else {
+                guard let self else { return }
+                defer { self.droppedLoadCallbackHandled?() }
+                guard self.droppedLoadGeneration == generation else {
                     return
                 }
                 self.droppedLoadProgress = nil

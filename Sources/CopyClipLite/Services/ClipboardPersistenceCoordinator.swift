@@ -39,16 +39,19 @@ private final class ImportCancellationState: @unchecked Sendable {
 final class ClipboardPersistenceCoordinator: @unchecked Sendable {
     private let storage: any ClipboardHistoryRepository
     private let queue: DispatchQueue
+    private let scheduleDelayedSave: (@Sendable (DispatchWorkItem) -> Void)?
     private let generation = PersistenceGeneration()
     private let workItemLock = NSLock()
     private var scheduledWorkItem: DispatchWorkItem?
 
     init(
         storage: any ClipboardHistoryRepository,
-        queue: DispatchQueue = DispatchQueue(label: "CopyClipLite.persistence", qos: .utility)
+        queue: DispatchQueue = DispatchQueue(label: "CopyClipLite.persistence", qos: .utility),
+        scheduleDelayedSave: (@Sendable (DispatchWorkItem) -> Void)? = nil
     ) {
         self.storage = storage
         self.queue = queue
+        self.scheduleDelayedSave = scheduleDelayedSave
     }
 
     deinit {
@@ -72,7 +75,11 @@ final class ClipboardPersistenceCoordinator: @unchecked Sendable {
             }
         }
         setScheduledWorkItem(workItem)
-        queue.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+        if let scheduleDelayedSave {
+            scheduleDelayedSave(workItem)
+        } else {
+            queue.asyncAfter(deadline: .now() + 0.15, execute: workItem)
+        }
     }
 
     func flush(_ snapshot: [ClipboardItem]) async throws -> [ClipboardItem] {

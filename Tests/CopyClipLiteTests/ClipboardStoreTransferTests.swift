@@ -242,9 +242,8 @@ extension ClipboardStoreTests {
         let preparation = Task {
             try await store.prepareImport(from: importURL)
         }
-        for _ in 0..<100 where !store.isTransferBusy {
-            await Task.yield()
-        }
+        await waitForState(of: store, "import preparation started") { store.isTransferBusy }
+        XCTAssertTrue(store.isTransferBusy)
 
         var mainActorHeartbeats = 0
         var maximumHeartbeatGap = Duration.zero

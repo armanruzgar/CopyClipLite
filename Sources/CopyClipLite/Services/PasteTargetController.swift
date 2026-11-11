@@ -118,7 +118,7 @@ final class PasteTargetController: ObservableObject {
 
     private var lastExternalApplication: (any PasteTargetApplication)?
     private var activationObservation: PasteTargetActivationObservation?
-    private var pendingPasteTask: Task<Void, Never>?
+    private(set) var pendingPasteTask: Task<Void, Never>?
     private var pendingPasteOwnsHiddenUI = false
     private var pasteRequestGeneration: UInt64 = 0
     private var isPreservingTargetForSystemSettings = false

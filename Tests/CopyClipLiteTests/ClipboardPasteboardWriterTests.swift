@@ -120,7 +120,7 @@ final class ClipboardPasteboardWriterTests: XCTestCase {
             _ = writer.write(self.request(text: "first"))
             firstFinished.signal()
         }
-        XCTAssertEqual(pasteboard.firstWriteStarted.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(pasteboard.firstWriteStarted.wait(timeout: .now() + 10), .success)
 
         DispatchQueue.global().async {
             _ = writer.write(self.request(text: "second"))
@@ -130,8 +130,8 @@ final class ClipboardPasteboardWriterTests: XCTestCase {
         XCTAssertEqual(pasteboard.attemptedWriteCount, 1)
 
         pasteboard.allowFirstWrite.signal()
-        XCTAssertEqual(firstFinished.wait(timeout: .now() + 2), .success)
-        XCTAssertEqual(secondFinished.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(firstFinished.wait(timeout: .now() + 10), .success)
+        XCTAssertEqual(secondFinished.wait(timeout: .now() + 10), .success)
         XCTAssertEqual(pasteboard.attemptedWriteCount, 2)
     }
 

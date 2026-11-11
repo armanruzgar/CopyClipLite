@@ -228,9 +228,8 @@ final class UpdateCheckerTests: XCTestCase {
     }
 
     private func waitUntilNotChecking(_ checker: UpdateChecker) async {
-        for _ in 0..<100 where checker.state == .checking {
-            await Task.yield()
-        }
+        await checker.checkTask?.value
+        XCTAssertNotEqual(checker.state, .checking)
     }
 
     private func makeHTTPChecker(

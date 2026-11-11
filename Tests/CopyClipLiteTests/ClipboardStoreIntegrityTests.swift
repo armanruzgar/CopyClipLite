@@ -6,11 +6,13 @@ import XCTest
 
 private actor GatedFirstImageProcessor: ClipboardImageProcessing {
     private var continuation: CheckedContinuation<Void, Never>?
-    private(set) var hasStarted = false
+    private var hasStarted = false
+    nonisolated let started = XCTestExpectation(description: "first image processing started")
 
     func process(_ candidate: ClipboardImageCandidate) async throws -> ClipboardImagePayload {
         if !hasStarted {
             hasStarted = true
+            started.fulfill()
             await withCheckedContinuation { continuation = $0 }
         }
         return try ClipboardImageProcessor.process(candidate)
@@ -302,18 +304,11 @@ extension ClipboardStoreTests {
     }
 
     private func waitForFirstImageProcessing(_ processor: GatedFirstImageProcessor) async throws {
-        for _ in 0..<1_000 {
-            if await processor.hasStarted { return }
-            try await Task.sleep(nanoseconds: 1_000_000)
-        }
-        XCTFail("Image processing never started")
+        await fulfillment(of: [processor.started], timeout: 10)
     }
 
     private func waitForHistoryCount(_ count: Int, in store: ClipboardStore) async throws {
-        for _ in 0..<1_000 {
-            if store.items.count == count { return }
-            try await Task.sleep(nanoseconds: 1_000_000)
-        }
+        await waitForState(of: store, "\(count) history items") { store.items.count == count }
         XCTAssertEqual(store.items.count, count)
     }
 }

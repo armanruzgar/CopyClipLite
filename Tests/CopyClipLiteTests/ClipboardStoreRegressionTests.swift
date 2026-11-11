@@ -72,11 +72,13 @@ extension ClipboardStoreTests {
 
     func testOfficeCopyWithRichTextAndRenderedImageIsRecordedAsText() async throws {
         let pasteboard = makePasteboard()
+        let processor = RecordingDelayedImageProcessor(delayNanoseconds: 0)
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            imageProcessor: processor
         )
         defer { store.setMonitoringEnabled(false) }
         let rtfData = try XCTUnwrap(
@@ -91,10 +93,13 @@ extension ClipboardStoreTests {
         pasteboard.setData(try makePNGData(width: 4, height: 4), forType: .png)
 
         store.pollPasteboardForChanges()
-        try await Task.sleep(nanoseconds: 200_000_000)
+        // The image queue is serial, so a rendered image sent for processing would be seen first.
+        try await captureImageSentinel(in: store, pasteboard: pasteboard)
+        let processed = await processor.started()
+        XCTAssertEqual(processed, [Self.imageSentinel])
 
-        XCTAssertEqual(store.items.count, 1)
-        let item = try XCTUnwrap(store.items.first)
+        XCTAssertEqual(store.items.count, 2)
+        let item = try XCTUnwrap(store.items.first { !$0.isImage })
         XCTAssertEqual(item.contentKind, .text)
         XCTAssertEqual(item.text, "Q3 revenue")
         XCTAssertEqual(item.rtfData, rtfData)
@@ -125,11 +130,13 @@ extension ClipboardStoreTests {
     func testMultipleFinderFilesBecomeSeparateFileClips() async throws {
         let pasteboard = makePasteboard()
         let now = Date(timeIntervalSinceReferenceDate: 50_000)
+        let processor = RecordingDelayedImageProcessor(delayNanoseconds: 0)
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeDefaults(),
             sourceApplicationProvider: { nil },
+            imageProcessor: processor,
             clock: ClipboardStoreClock(now: { now }, sleep: { _ in })
         )
         defer { store.setMonitoringEnabled(false) }
@@ -141,12 +148,18 @@ extension ClipboardStoreTests {
         pasteboard.setString("notes.txt\nphoto.png\nslides.pdf", forType: .string)
 
         store.pollPasteboardForChanges()
-        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertNil(store.captureWarning)
+        // The image queue is serial, so a file sent for image processing would be seen first.
+        try await captureImageSentinel(in: store, pasteboard: pasteboard)
+        let processed = await processor.started()
+        XCTAssertEqual(processed, [Self.imageSentinel])
 
-        XCTAssertEqual(store.items.count, 3)
-        XCTAssertTrue(store.items.allSatisfy { $0.contentKind == .link })
-        XCTAssertEqual(store.items.compactMap(\.linkURL?.path), fileURLs.map(\.path))
-        XCTAssertTrue(store.items.allSatisfy { $0.createdAt == now && $0.lastCopiedAt == now })
+        let fileClips = store.items.filter { !$0.isImage }
+        XCTAssertEqual(store.items.count, 4)
+        XCTAssertEqual(fileClips.count, 3)
+        XCTAssertTrue(fileClips.allSatisfy { $0.contentKind == .link })
+        XCTAssertEqual(fileClips.compactMap(\.linkURL?.path), fileURLs.map(\.path))
+        XCTAssertTrue(fileClips.allSatisfy { $0.createdAt == now && $0.lastCopiedAt == now })
         XCTAssertNil(store.captureWarning)
     }
 
@@ -178,7 +191,7 @@ extension ClipboardStoreTests {
     func testThumbnailRepairDuringImportCannotOverwriteImportedHistory() async throws {
         let directory = try makeTemporaryDirectory()
         final class BlockingFault: @unchecked Sendable {
-            let started = DispatchSemaphore(value: 0)
+            let started = XCTestExpectation(description: "import commit blocked")
             let allowCompletion = DispatchSemaphore(value: 0)
             let lock = NSLock()
             var shouldBlock = false
@@ -193,7 +206,7 @@ extension ClipboardStoreTests {
                 }
                 lock.unlock()
                 guard block else { return }
-                started.signal()
+                started.fulfill()
                 allowCompletion.wait()
             }
         }
@@ -218,6 +231,7 @@ extension ClipboardStoreTests {
         sourceStorage.save([ClipboardItem(text: "imported")])
         try sourceStorage.export(sourceStorage.load(), to: importURL)
         let loaderGate = DispatchSemaphore(value: 0)
+        let clock = ClockReadSignal()
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
@@ -229,7 +243,11 @@ extension ClipboardStoreTests {
                     data: Data([1, 2, 3]),
                     fileName: item.image?.fileName ?? "repaired.png"
                 )
-            }
+            },
+            clock: ClipboardStoreClock(
+                now: { clock.now() },
+                sleep: { try await Task.sleep(nanoseconds: $0) }
+            )
         )
         defer { store.setMonitoringEnabled(false) }
         let imageItem = try XCTUnwrap(store.items.first)
@@ -241,14 +259,14 @@ extension ClipboardStoreTests {
         let importTask = Task {
             try await store.importHistory(plan: plan, strategy: .replace)
         }
-        for _ in 0..<100 where !store.isTransferBusy {
-            await Task.yield()
-        }
+        await fulfillment(of: [fault.started], timeout: 10)
         XCTAssertTrue(store.isTransferBusy)
-        XCTAssertEqual(fault.started.wait(timeout: .now() + 2), .success)
 
+        // While a transfer is busy the finished load only records a retry time, which reads the clock.
+        let repairFinished = clock.expectNextRead("thumbnail load finished")
         loaderGate.signal()
-        try await Task.sleep(nanoseconds: 300_000_000)
+        await fulfillment(of: [repairFinished], timeout: 10)
+        XCTAssertTrue(store.isTransferBusy)
         fault.allowCompletion.signal()
         _ = try await importTask.value
         try await Task.sleep(nanoseconds: 300_000_000)
@@ -377,5 +395,25 @@ extension ClipboardStoreTests {
         XCTAssertEqual(store.items.count, 2)
         XCTAssertEqual(transformed.createdAt, now)
         XCTAssertEqual(transformed.lastCopiedAt, now)
+    }
+}
+
+/// A wall clock that can report the next time the store reads it.
+private final class ClockReadSignal: @unchecked Sendable {
+    private let lock = NSLock()
+    private var nextRead: XCTestExpectation?
+
+    func now() -> Date {
+        lock.withLock {
+            defer { nextRead = nil }
+            return nextRead
+        }?.fulfill()
+        return Date()
+    }
+
+    func expectNextRead(_ description: String) -> XCTestExpectation {
+        let expectation = XCTestExpectation(description: description)
+        lock.withLock { nextRead = expectation }
+        return expectation
     }
 }

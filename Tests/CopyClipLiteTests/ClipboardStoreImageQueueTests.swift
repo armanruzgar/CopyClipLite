@@ -65,9 +65,7 @@ extension ClipboardStoreTests {
                 )
             )
             store.pollPasteboardForChanges()
-            for _ in 0..<500 where store.items.count < marker {
-                try await Task.sleep(nanoseconds: 1_000_000)
-            }
+            await waitForState(of: store, "capture \(marker)") { store.items.count >= marker }
             XCTAssertEqual(store.items.count, marker)
             let didFlush = await store.flushPendingPersist()
             XCTAssertTrue(didFlush)
@@ -135,8 +133,8 @@ extension ClipboardStoreTests {
         )
 
         XCTAssertNil(store.cachedThumbnailData(for: item))
-        for _ in 0..<100 where store.cachedThumbnailData(for: item) == nil {
-            try await Task.sleep(nanoseconds: 10_000_000)
+        await waitForState(of: store, "repaired thumbnail") {
+            store.cachedThumbnailData(for: item) != nil
         }
 
         let repairedData = try XCTUnwrap(store.cachedThumbnailData(for: item))
@@ -194,8 +192,8 @@ extension ClipboardStoreTests {
         let storedImage = try XCTUnwrap(store.items.first(where: \.isImage))
 
         XCTAssertNil(store.cachedThumbnailData(for: storedImage))
-        for _ in 0..<100 where store.cachedThumbnailData(for: storedImage) == nil {
-            try await Task.sleep(nanoseconds: 10_000_000)
+        await waitForState(of: store, "loaded thumbnail") {
+            store.cachedThumbnailData(for: storedImage) != nil
         }
         XCTAssertEqual(store.cachedThumbnailData(for: storedImage), thumbnailData)
         XCTAssertEqual(counter.value, 1)
@@ -211,20 +209,26 @@ extension ClipboardStoreTests {
 
     func testClearInvalidatesPendingImageCapture() async throws {
         let pasteboard = makePasteboard()
+        let processor = GatedImageProcessor()
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeDefaults(),
-            imageProcessor: DelayedImageProcessor(delayNanoseconds: 200_000_000)
+            imageProcessor: processor
         )
 
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.setData(Data([1, 2, 3]), forType: .png))
         store.pollPasteboardForChanges()
+        await fulfillment(of: [processor.firstStarted], timeout: 10)
         await store.clearHistory()
-        try await Task.sleep(nanoseconds: 300_000_000)
+        await processor.release()
 
-        XCTAssertTrue(store.items.isEmpty)
+        // Delivered after the cleared capture's outcome, so that outcome would show up first.
+        try await captureImageSentinel(in: store, pasteboard: pasteboard)
+        XCTAssertEqual(store.items.map(\.image?.contentHash), [Self.imageSentinelHash])
+        let started = await processor.started()
+        XCTAssertEqual(started, [Data([1, 2, 3]), Self.imageSentinel])
     }
 
     func testRapidImageCapturesKeepOneInFlightAndLatestSevenQueuedInOrder() async throws {
@@ -242,9 +246,7 @@ extension ClipboardStoreTests {
         XCTAssertTrue(pasteboard.setData(Data([0]), forType: .png))
         XCTAssertTrue(pasteboard.setString("capture-0", forType: .string))
         store.pollPasteboardForChanges()
-        for _ in 0..<100 where await processor.started().isEmpty {
-            await Task.yield()
-        }
+        await fulfillment(of: [processor.firstStarted], timeout: 10)
         let initiallyStarted = await processor.started()
         XCTAssertEqual(initiallyStarted, [Data([0])])
 
@@ -255,9 +257,7 @@ extension ClipboardStoreTests {
             store.pollPasteboardForChanges()
         }
 
-        for _ in 0..<200 where store.items.count < 8 {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await waitForState(of: store, "eight captures") { store.items.count >= 8 }
 
         XCTAssertEqual(store.items.count, 8)
         XCTAssertEqual(
@@ -270,7 +270,7 @@ extension ClipboardStoreTests {
 
     func testQuitCleanupCancelsPendingImageCapture() async throws {
         let pasteboard = makePasteboard()
-        let processor = RecordingDelayedImageProcessor(delayNanoseconds: 200_000_000)
+        let processor = GatedImageProcessor()
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
@@ -282,14 +282,17 @@ extension ClipboardStoreTests {
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.setData(Data([1]), forType: .png))
         store.pollPasteboardForChanges()
-        for _ in 0..<100 where await processor.started().isEmpty {
-            await Task.yield()
-        }
+        await fulfillment(of: [processor.firstStarted], timeout: 10)
 
         store.clearUnpinnedHistoryOnQuitIfNeeded()
-        try await Task.sleep(nanoseconds: 250_000_000)
-
         XCTAssertTrue(store.items.isEmpty)
+        await processor.release()
+
+        // Delivered after the cancelled capture's outcome, so that outcome would show up first.
+        try await captureImageSentinel(in: store, pasteboard: pasteboard)
+        XCTAssertEqual(store.items.map(\.image?.contentHash), [Self.imageSentinelHash])
+        let started = await processor.started()
+        XCTAssertEqual(started, [Data([1]), Self.imageSentinel])
     }
 
     func testDuplicateImageRefreshesAssociatedText() async throws {
@@ -501,6 +504,24 @@ extension ClipboardStoreTests {
         XCTAssertTrue(reloadedStoreImage.isPinned)
         XCTAssertTrue(reloadedStore.copy(reloadedStoreImage))
         try assertReadableImageData(reloadedPasteboard.data(forType: .png))
+    }
+}
+
+extension ClipboardStoreTests {
+    static let imageSentinel = Data([0xC0, 0xFF, 0xEE])
+    static let imageSentinelHash = ClipboardImageProcessor.contentHash(for: imageSentinel)
+
+    /// Captures an image through the store's serial image queue and waits for it.
+    func captureImageSentinel(
+        in store: ClipboardStore,
+        pasteboard: StubStorePasteboard
+    ) async throws {
+        pasteboard.clearContents()
+        XCTAssertTrue(pasteboard.setData(Self.imageSentinel, forType: .png))
+        store.pollPasteboardForChanges()
+        await waitForState(of: store, "image sentinel") {
+            store.items.contains { $0.image?.contentHash == Self.imageSentinelHash }
+        }
     }
 }
 

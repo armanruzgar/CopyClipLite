@@ -6,25 +6,6 @@ import XCTest
 
 @testable import CopyClipLite
 
-actor DelayedImageProcessor: ClipboardImageProcessing {
-    let delayNanoseconds: UInt64
-
-    init(delayNanoseconds: UInt64) {
-        self.delayNanoseconds = delayNanoseconds
-    }
-
-    func process(_ candidate: ClipboardImageCandidate) async throws -> ClipboardImagePayload {
-        try await Task.sleep(nanoseconds: delayNanoseconds)
-        return ClipboardImagePayload(
-            data: candidate.data,
-            thumbnailData: candidate.data,
-            width: 1,
-            height: 1,
-            contentHash: ClipboardImageProcessor.contentHash(for: candidate.data)
-        )
-    }
-}
-
 actor SequencedImageProcessor: ClipboardImageProcessing {
     private var invocation = 0
 
@@ -47,6 +28,7 @@ actor SequencedImageProcessor: ClipboardImageProcessing {
 actor RecordingDelayedImageProcessor: ClipboardImageProcessing {
     private let delayNanoseconds: UInt64
     private var startedData: [Data] = []
+    nonisolated let firstStarted = XCTestExpectation(description: "first image processing started")
 
     init(delayNanoseconds: UInt64) {
         self.delayNanoseconds = delayNanoseconds
@@ -54,6 +36,9 @@ actor RecordingDelayedImageProcessor: ClipboardImageProcessing {
 
     func process(_ candidate: ClipboardImageCandidate) async throws -> ClipboardImagePayload {
         startedData.append(candidate.data)
+        if startedData.count == 1 {
+            firstStarted.fulfill()
+        }
         try await Task.sleep(nanoseconds: delayNanoseconds)
         return ClipboardImagePayload(
             data: candidate.data,
@@ -62,6 +47,49 @@ actor RecordingDelayedImageProcessor: ClipboardImageProcessing {
             height: 1,
             contentHash: ClipboardImageProcessor.contentHash(for: candidate.data)
         )
+    }
+
+    func started() -> [Data] {
+        startedData
+    }
+}
+
+/// Parks the first image until `release()` and records every candidate in order. Later
+/// candidates wait for the first to return, so their outcomes are delivered after its outcome.
+actor GatedImageProcessor: ClipboardImageProcessing {
+    nonisolated let firstStarted = XCTestExpectation(description: "first image processing started")
+    private var startedData: [Data] = []
+    private var gate: CheckedContinuation<Void, Never>?
+    private var isReleased = false
+    private var firstReturned = false
+    private var waitingForFirst: [CheckedContinuation<Void, Never>] = []
+
+    func process(_ candidate: ClipboardImageCandidate) async throws -> ClipboardImagePayload {
+        startedData.append(candidate.data)
+        if startedData.count == 1 {
+            firstStarted.fulfill()
+            if !isReleased {
+                await withCheckedContinuation { gate = $0 }
+            }
+            firstReturned = true
+            waitingForFirst.forEach { $0.resume() }
+            waitingForFirst.removeAll()
+        } else if !firstReturned {
+            await withCheckedContinuation { waitingForFirst.append($0) }
+        }
+        return ClipboardImagePayload(
+            data: candidate.data,
+            thumbnailData: candidate.data,
+            width: 1,
+            height: 1,
+            contentHash: ClipboardImageProcessor.contentHash(for: candidate.data)
+        )
+    }
+
+    func release() {
+        isReleased = true
+        gate?.resume()
+        gate = nil
     }
 
     func started() -> [Data] {
@@ -98,6 +126,7 @@ final class ManualClipboardClock: @unchecked Sendable {
     private let lock = NSLock()
     private var currentDate: Date
     private var sleepers: [Sleeper] = []
+    private var sleeperExpectations: [(count: Int, expectation: XCTestExpectation)] = []
 
     init(now: Date) {
         currentDate = now
@@ -121,7 +150,11 @@ final class ManualClipboardClock: @unchecked Sendable {
                     continuation: continuation
                 )
             )
+            let sleeperCount = sleepers.count
+            let met = sleeperExpectations.filter { $0.count <= sleeperCount }
+            sleeperExpectations.removeAll { $0.count <= sleeperCount }
             lock.unlock()
+            met.forEach { $0.expectation.fulfill() }
         }
         try Task.checkCancellation()
     }
@@ -153,6 +186,20 @@ final class ManualClipboardClock: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         return sleepers.count
+    }
+
+    /// Fulfilled once `count` sleepers are parked at the same time.
+    func expectSleepers(_ count: Int = 1) -> XCTestExpectation {
+        let expectation = XCTestExpectation(description: "\(count) clock sleeper(s) waiting")
+        lock.lock()
+        guard sleepers.count < count else {
+            lock.unlock()
+            expectation.fulfill()
+            return expectation
+        }
+        sleeperExpectations.append((count, expectation))
+        lock.unlock()
+        return expectation
     }
 }
 
@@ -424,15 +471,13 @@ final class ClipboardStoreTests: XCTestCase {
     }
 
     func waitForCapturedItem(in store: ClipboardStore) async throws {
-        for _ in 0..<100 where store.items.isEmpty {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await waitForState(of: store, "captured item") { !store.items.isEmpty }
         XCTAssertFalse(store.items.isEmpty, "Timed out waiting for background image processing")
     }
 
     func waitForCopyCount(_ copyCount: Int, in store: ClipboardStore) async throws {
-        for _ in 0..<100 where store.items.first?.copyCount != copyCount {
-            try await Task.sleep(nanoseconds: 10_000_000)
+        await waitForState(of: store, "copy count \(copyCount)") {
+            store.items.first?.copyCount == copyCount
         }
         XCTAssertEqual(store.items.first?.copyCount, copyCount)
     }
@@ -451,7 +496,7 @@ final class ClipboardStoreTests: XCTestCase {
     ) async throws {
         let directory = try makeTemporaryDirectory()
         final class BlockingFault: @unchecked Sendable {
-            let started = DispatchSemaphore(value: 0)
+            let started = XCTestExpectation(description: "manifest write blocked")
             let allowCompletion = DispatchSemaphore(value: 0)
             let lock = NSLock()
             var shouldBlock = false
@@ -466,7 +511,7 @@ final class ClipboardStoreTests: XCTestCase {
                 }
                 lock.unlock()
                 guard block else { return }
-                started.signal()
+                started.fulfill()
                 allowCompletion.wait()
             }
         }
@@ -491,16 +536,14 @@ final class ClipboardStoreTests: XCTestCase {
         let existingItem = try XCTUnwrap(store.items.first)
         fault.shouldBlock = true
         store.togglePin(existingItem)
-        XCTAssertEqual(fault.started.wait(timeout: .now() + 2), .success)
+        await fulfillment(of: [fault.started], timeout: 10)
 
         let artifact = try await store.prepareImport(from: importURL)
         let plan = store.importPlan(for: artifact)
         let importTask = Task {
             try await store.importHistory(plan: plan, strategy: strategy)
         }
-        for _ in 0..<100 where !store.isTransferBusy {
-            await Task.yield()
-        }
+        await waitForState(of: store, "import started") { store.isTransferBusy }
         XCTAssertTrue(store.isTransferBusy)
         await store.delete(existingItem)
         store.setHistoryLimit(10)

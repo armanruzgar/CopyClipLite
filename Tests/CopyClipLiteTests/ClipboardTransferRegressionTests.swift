@@ -22,6 +22,28 @@ private final class CountingClipboardImageReader: ClipboardImageReading, @unchec
     }
 }
 
+/// Reports the next removal, such as a drag stager deleting its session directory on deinit.
+private final class RemovalSignallingFileManager: FileManager, @unchecked Sendable {
+    private let lock = NSLock()
+    private var nextRemoval: XCTestExpectation?
+
+    func expectNextRemoval(_ description: String) -> XCTestExpectation {
+        let expectation = XCTestExpectation(description: description)
+        lock.withLock { nextRemoval = expectation }
+        return expectation
+    }
+
+    override func removeItem(at url: URL) throws {
+        defer {
+            lock.withLock {
+                defer { nextRemoval = nil }
+                return nextRemoval
+            }?.fulfill()
+        }
+        try super.removeItem(at: url)
+    }
+}
+
 private final class RecordingTransferRepository: ClipboardTransferRepository, @unchecked Sendable {
     private let lock = NSLock()
     private var storedExportURL: URL?
@@ -142,8 +164,10 @@ final class ClipboardTransferRegressionTests: XCTestCase {
         try Data("stale".utf8).write(to: staleURL)
 
         let reader = CountingClipboardImageReader(data: Data("canonical png".utf8))
+        let fileManager = RemovalSignallingFileManager()
         let factory = ClipboardDragProviderFactory(
             imageReader: reader,
+            fileManager: fileManager,
             stagingDirectory: root
         )
 
@@ -188,13 +212,9 @@ final class ClipboardTransferRegressionTests: XCTestCase {
         XCTAssertEqual(stagedPermissions.file, 0o600)
         XCTAssertEqual(reader.readCount, 1)
 
+        let sessionRemoved = fileManager.expectNextRemoval("drag session directory removed")
         provider = nil
-        for _ in 0..<100 {
-            if try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty {
-                break
-            }
-            try await Task.sleep(for: .milliseconds(5))
-        }
+        await fulfillment(of: [sessionRemoved], timeout: 10)
         XCTAssertTrue(try FileManager.default.contentsOfDirectory(atPath: root.path).isEmpty)
     }
 

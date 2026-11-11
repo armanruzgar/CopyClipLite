@@ -8,15 +8,13 @@ private final class DataRepresentationCompletionBox: @unchecked Sendable {
 
     private let lock = NSLock()
     private var completion: Completion?
-
-    var isReady: Bool {
-        lock.withLock { completion != nil }
-    }
+    let ready = XCTestExpectation(description: "provider asked for data")
 
     func store(_ completion: @escaping Completion) {
         lock.withLock {
             self.completion = completion
         }
+        ready.fulfill()
     }
 
     func resolve(data: Data?, error: Error?) {
@@ -67,9 +65,7 @@ final class SettingsTransferStateTests: XCTestCase {
             sourceFileName: "Dropped.json",
             store: store
         )
-        try await waitUntil {
-            !state.isTransferring
-        }
+        await waitForTransferToFinish(state)
 
         let actualPlan = try XCTUnwrap(state.pendingImportPlan)
         XCTAssertTrue(state.isConfirmingImport)
@@ -105,9 +101,7 @@ final class SettingsTransferStateTests: XCTestCase {
             sourceFileName: "Broken.json",
             store: store
         )
-        try await waitUntil {
-            !state.isLoadingDroppedImport
-        }
+        await waitForState(of: state, "dropped import loaded") { !state.isLoadingDroppedImport }
 
         XCTAssertNotNil(state.error)
         XCTAssertNil(state.pendingImportPlan)
@@ -134,14 +128,12 @@ final class SettingsTransferStateTests: XCTestCase {
             sourceFileName: "Late.json",
             store: store
         )
-        try await waitUntil {
-            state.isLoadingDroppedImport && completionBox.isReady
-        }
+        await fulfillment(of: [completionBox.ready], timeout: 10)
+        XCTAssertTrue(state.isLoadingDroppedImport)
+        let lateCallbackHandled = expectLateProviderCallback(on: state)
         state.cancelCurrentTransfer()
         completionBox.resolve(data: data, error: nil)
-        for _ in 0..<10 {
-            await Task.yield()
-        }
+        await fulfillment(of: [lateCallbackHandled], timeout: 10)
 
         XCTAssertFalse(state.isLoadingDroppedImport)
         XCTAssertEqual(state.message, "Import cancelled.")
@@ -160,7 +152,7 @@ final class SettingsTransferStateTests: XCTestCase {
             let state = SettingsTransferCoordinator()
             state.prepareImport(from: url, store: store)
             XCTAssertTrue(state.isTransferring)
-            try await waitUntil { !state.isTransferring }
+            await waitForTransferToFinish(state)
 
             let plan = try XCTUnwrap(state.pendingImportPlan)
             XCTAssertTrue(state.isConfirmingImport)
@@ -170,7 +162,7 @@ final class SettingsTransferStateTests: XCTestCase {
 
             state.importHistory(strategy: strategy, store: store)
             XCTAssertFalse(state.isConfirmingImport)
-            try await waitUntil { !state.isTransferring }
+            await waitForTransferToFinish(state)
 
             XCTAssertNil(state.error)
             XCTAssertNil(state.pendingImportPlan)
@@ -190,7 +182,7 @@ final class SettingsTransferStateTests: XCTestCase {
         let state = SettingsTransferCoordinator()
 
         state.exportHistory(to: url, store: store)
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
 
         XCTAssertNil(state.error)
         XCTAssertEqual(state.message, "Exported history to Saved.json.")
@@ -206,7 +198,7 @@ final class SettingsTransferStateTests: XCTestCase {
         try Data("invalid JSON".utf8).write(to: url)
 
         state.prepareImport(from: url, store: store)
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
         XCTAssertNotNil(state.error)
         XCTAssertNil(state.pendingImportPlan)
         XCTAssertFalse(state.isConfirmingImport)
@@ -214,7 +206,7 @@ final class SettingsTransferStateTests: XCTestCase {
 
         state.exportHistory(to: url, store: store)
         XCTAssertNil(state.error)
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
         XCTAssertEqual(state.message, "Exported history to Invalid.json.")
         XCTAssertNil(state.error)
     }
@@ -224,13 +216,13 @@ final class SettingsTransferStateTests: XCTestCase {
         let store = try makeStore(items: [ClipboardItem(text: "existing")])
         let state = SettingsTransferCoordinator()
         state.loadDroppedImport(from: provider(returning: data), sourceFileName: "Drop.json", store: store)
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
         XCTAssertNotNil(state.pendingImportPlan)
         store.togglePin(try XCTUnwrap(store.items.first))
         let originalItems = store.items
 
         state.importHistory(strategy: .replace, store: store)
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
 
         XCTAssertEqual(state.error, ClipboardStorageError.importPlanExpired.localizedDescription)
         XCTAssertEqual(store.items, originalItems)
@@ -250,23 +242,23 @@ final class SettingsTransferStateTests: XCTestCase {
 
         state.exportHistory(to: url, store: store)
         state.cancelCurrentTransfer()
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
         XCTAssertEqual(state.message, "Export cancelled.")
         XCTAssertEqual(try Data(contentsOf: url), data)
 
         state.prepareImport(from: url, store: store)
         state.cancelCurrentTransfer()
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
         XCTAssertEqual(state.message, "Import cancelled.")
         XCTAssertNil(state.pendingImportPlan)
         XCTAssertFalse(state.isConfirmingImport)
 
         state.prepareImport(from: url, store: store)
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
         XCTAssertNotNil(state.pendingImportPlan)
         state.importHistory(strategy: .replace, store: store)
         state.cancelCurrentTransfer()
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
 
         XCTAssertEqual(state.message, "Import cancelled before history was changed.")
         XCTAssertEqual(store.items.map(\.text), ["existing"])
@@ -281,20 +273,20 @@ final class SettingsTransferStateTests: XCTestCase {
         let data = try makeExportData(items: [ClipboardItem(text: "imported")])
         let state = SettingsTransferCoordinator()
         state.loadDroppedImport(from: provider(returning: data), sourceFileName: "Drop.json", store: store)
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
         XCTAssertNotNil(state.pendingImportPlan)
         // The first manifest saves the current history; the second commits the import.
         gate.blockManifestWrite(number: 2)
         defer { gate.release() }
         state.importHistory(strategy: .replace, store: store)
-        try await waitUntil { gate.isBlocked }
+        await fulfillment(of: [gate.blocked], timeout: 10)
 
         state.cancelCurrentTransfer()
         XCTAssertTrue(state.isTransferring)
         let unwantedExport = try makeTemporaryDirectory().appendingPathComponent("Busy.json")
         state.exportHistory(to: unwantedExport, store: store)
         gate.release()
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
 
         XCTAssertNil(state.error)
         XCTAssertTrue(state.message?.hasPrefix("Imported 1 clips") == true)
@@ -316,12 +308,13 @@ final class SettingsTransferStateTests: XCTestCase {
         }
         let state = SettingsTransferCoordinator()
         state.loadDroppedImport(from: provider, sourceFileName: "Cancelled.json", store: store)
-        try await waitUntil { box.isReady }
+        await fulfillment(of: [box.ready], timeout: 10)
+        let lateCallbackHandled = expectLateProviderCallback(on: state)
         state.cancelCurrentTransfer()
         state.prepareImport(from: url, store: store)
-        try await waitUntil { !state.isTransferring }
+        await waitForTransferToFinish(state)
         box.resolve(data: data, error: nil)
-        for _ in 0..<10 { await Task.yield() }
+        await fulfillment(of: [lateCallbackHandled], timeout: 10)
 
         XCTAssertTrue(state.isConfirmingImport)
         XCTAssertEqual(state.pendingImportPlan?.artifact.sourceFileName, "Selected.json")
@@ -384,18 +377,17 @@ final class SettingsTransferStateTests: XCTestCase {
         return directory
     }
 
-    private func waitUntil(
-        timeout: Duration = .seconds(2),
-        condition: @MainActor () -> Bool
-    ) async throws {
-        let deadline = ContinuousClock.now.advanced(by: timeout)
-        while !condition() {
-            guard ContinuousClock.now < deadline else {
-                XCTFail("Timed out waiting for transfer state.")
-                return
-            }
-            try await Task.sleep(for: .milliseconds(5))
-        }
+    /// Cancelling the provider's progress makes it call back once, either with the
+    /// cancellation or with data resolved before the cancellation reached it.
+    private func expectLateProviderCallback(on state: SettingsTransferCoordinator) -> XCTestExpectation {
+        let handled = expectation(description: "cancelled drop's provider callback handled")
+        handled.assertForOverFulfill = false
+        state.droppedLoadCallbackHandled = { handled.fulfill() }
+        return handled
+    }
+
+    private func waitForTransferToFinish(_ state: SettingsTransferCoordinator) async {
+        await waitForState(of: state, "transfer finished") { !state.isTransferring }
     }
 }
 
@@ -403,9 +395,7 @@ private final class TransferCommitGate: @unchecked Sendable {
     private let lock = NSLock()
     private let proceed = DispatchSemaphore(value: 0)
     private var remainingWrites: Int?
-    private var blocked = false
-
-    var isBlocked: Bool { lock.withLock { blocked } }
+    let blocked = XCTestExpectation(description: "import commit blocked")
 
     func blockManifestWrite(number: Int) {
         lock.withLock { remainingWrites = number }
@@ -418,10 +408,10 @@ private final class TransferCommitGate: @unchecked Sendable {
             self.remainingWrites = remainingWrites - 1
             guard remainingWrites == 1 else { return false }
             self.remainingWrites = nil
-            blocked = true
             return true
         }
         guard shouldBlock else { return }
+        blocked.fulfill()
         guard proceed.wait(timeout: .now() + 5) == .success else {
             throw CocoaError(.fileWriteUnknown)
         }

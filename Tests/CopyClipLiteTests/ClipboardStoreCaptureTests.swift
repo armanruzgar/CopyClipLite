@@ -142,9 +142,7 @@ extension ClipboardStoreTests {
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.setData(Data([1, 2, 3]), forType: .png))
         store.pollPasteboardForChanges()
-        for _ in 0..<100 where store.captureWarning == nil {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await waitForState(of: store, "capture warning") { store.captureWarning != nil }
         XCTAssertNotNil(store.captureWarning)
 
         pasteboard.clearContents()
@@ -155,9 +153,7 @@ extension ClipboardStoreTests {
             )
         )
         store.pollPasteboardForChanges()
-        for _ in 0..<100 where store.items.first?.isImage != true {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
+        await waitForState(of: store, "captured image") { store.items.first?.isImage == true }
 
         XCTAssertTrue(store.items.first?.isImage == true)
         XCTAssertNil(store.captureWarning)
@@ -230,9 +226,8 @@ extension ClipboardStoreTests {
         store.pollPasteboardForChanges()
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.setString("later pasteboard value", forType: .string))
-        for _ in 0..<200
-        where !store.items.contains(where: { $0.text == "preserve oversized fallback" }) {
-            try await Task.sleep(nanoseconds: 10_000_000)
+        await waitForState(of: store, "oversized fallback") {
+            store.items.contains { $0.text == "preserve oversized fallback" }
         }
 
         let fallback = try XCTUnwrap(

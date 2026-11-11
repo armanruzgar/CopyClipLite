@@ -38,6 +38,7 @@ private final class PasteTestClock {
     var sleepDurations: [UInt64] = []
     var onSleep: ((UInt64) -> Void)?
     var suspendsSleeps = false
+    let sleepSuspended = XCTestExpectation(description: "paste attempt suspended in sleep")
     private var suspendedSleeps: [CheckedContinuation<Void, Never>] = []
 
     var suspendedSleepCount: Int {
@@ -53,6 +54,7 @@ private final class PasteTestClock {
         if suspendsSleeps {
             await withCheckedContinuation { continuation in
                 suspendedSleeps.append(continuation)
+                sleepSuspended.fulfill()
             }
         } else {
             await Task.yield()
@@ -136,8 +138,7 @@ final class PasteTargetControllerTests: XCTestCase {
         let (store, item) = try makeStoreAndItem()
 
         XCTAssertEqual(controller.targetApplicationName, "Target")
-        controller.paste(item, using: store)
-        await waitForAttemptToSettle(controller)
+        await pasteAndWaitForAttempt(item, using: store, on: controller)
 
         XCTAssertEqual(state.hideCount, 1)
         XCTAssertEqual(state.restoreCount, 0)
@@ -196,8 +197,7 @@ final class PasteTargetControllerTests: XCTestCase {
         let controller = makeController(target: target, state: state, clock: clock)
         let (store, item) = try makeStoreAndItem()
 
-        controller.paste(item, using: store)
-        await waitForAttemptToSettle(controller)
+        await pasteAndWaitForAttempt(item, using: store, on: controller)
 
         XCTAssertFalse(controller.isAccessibilityGranted)
         XCTAssertEqual(state.simulateCount, 0)
@@ -227,8 +227,7 @@ final class PasteTargetControllerTests: XCTestCase {
         )
         let (store, item) = try makeStoreAndItem()
 
-        controller.paste(item, using: store)
-        await waitForAttemptToSettle(controller)
+        await pasteAndWaitForAttempt(item, using: store, on: controller)
 
         XCTAssertEqual(state.simulateCount, 0)
         XCTAssertEqual(state.restoreCount, 1)
@@ -258,8 +257,7 @@ final class PasteTargetControllerTests: XCTestCase {
         )
         let (store, item) = try makeStoreAndItem()
 
-        controller.paste(item, using: store)
-        await waitForAttemptToSettle(controller)
+        await pasteAndWaitForAttempt(item, using: store, on: controller)
 
         XCTAssertEqual(clock.sleepDurations, [10, 10, 7])
         XCTAssertEqual(state.simulateCount, 1)
@@ -282,12 +280,13 @@ final class PasteTargetControllerTests: XCTestCase {
         let (store, item) = try makeStoreAndItem()
 
         controller.paste(item, using: store)
-        await waitForSuspendedSleep(clock)
+        let olderAttempt = try XCTUnwrap(controller.pendingPasteTask)
+        await fulfillment(of: [clock.sleepSuspended], timeout: 10)
         XCTAssertEqual(clock.suspendedSleepCount, 1)
         state.permissionGranted = false
         controller.paste(item, using: store)
         clock.resumeSuspendedSleeps()
-        await drainTasks()
+        await olderAttempt.value
 
         XCTAssertEqual(state.simulateCount, 0)
         XCTAssertEqual(state.restoreCount, 1)
@@ -301,8 +300,7 @@ final class PasteTargetControllerTests: XCTestCase {
         let controller = makeController(target: target, state: state)
         let (store, item) = try makeStoreAndItem()
 
-        controller.paste(item, using: store)
-        await waitForAttemptToSettle(controller)
+        await pasteAndWaitForAttempt(item, using: store, on: controller)
 
         XCTAssertEqual(state.simulateCount, 1)
         XCTAssertEqual(state.restoreCount, 1)
@@ -411,44 +409,25 @@ final class PasteTargetControllerTests: XCTestCase {
         )
     }
 
-    private func waitForAttemptToSettle(
-        _ controller: PasteTargetController,
+    private func pasteAndWaitForAttempt(
+        _ item: ClipboardItem,
+        using store: ClipboardStore,
+        on controller: PasteTargetController,
         file: StaticString = #filePath,
         line: UInt = #line
     ) async {
-        for _ in 0..<100 {
-            switch controller.attemptState {
-            case .activating, .waitingForTarget, .posting:
-                await Task.yield()
-            case .idle, .preflighting, .postAttempted, .failed:
-                return
-            }
+        controller.paste(item, using: store)
+        await controller.pendingPasteTask?.value
+        switch controller.attemptState {
+        case .activating, .waitingForTarget, .posting:
+            XCTFail(
+                "Paste attempt did not settle: \(controller.attemptState)",
+                file: file,
+                line: line
+            )
+        case .idle, .preflighting, .postAttempted, .failed:
+            break
         }
-        XCTFail(
-            "Paste attempt did not settle: \(controller.attemptState)",
-            file: file,
-            line: line
-        )
-    }
-
-    private func drainTasks() async {
-        for _ in 0..<10 {
-            await Task.yield()
-        }
-    }
-
-    private func waitForSuspendedSleep(
-        _ clock: PasteTestClock,
-        file: StaticString = #filePath,
-        line: UInt = #line
-    ) async {
-        for _ in 0..<100 {
-            if clock.suspendedSleepCount > 0 {
-                return
-            }
-            await Task.yield()
-        }
-        XCTFail("Paste attempt never reached injected sleep", file: file, line: line)
     }
 
     func testClipboardReplacementDuringActivationOrStabilizationAbortsPaste() async throws {
@@ -465,8 +444,7 @@ final class PasteTargetControllerTests: XCTestCase {
             }
             let controller = makeController(target: target, state: state, clock: clock)
 
-            controller.paste(item, using: store)
-            await waitForAttemptToSettle(controller)
+            await pasteAndWaitForAttempt(item, using: store, on: controller)
 
             XCTAssertEqual(state.simulateCount, 0)
             XCTAssertEqual(state.restoreCount, 1)
@@ -490,8 +468,7 @@ final class PasteTargetControllerTests: XCTestCase {
         }
         defer { observation.cancel() }
 
-        controller.paste(item, using: store)
-        await waitForAttemptToSettle(controller)
+        await pasteAndWaitForAttempt(item, using: store, on: controller)
 
         XCTAssertEqual(state.simulateCount, 0)
         XCTAssertEqual(state.restoreCount, 1)

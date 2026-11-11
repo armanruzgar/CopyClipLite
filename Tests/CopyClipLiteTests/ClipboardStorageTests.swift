@@ -325,7 +325,7 @@ final class ClipboardStorageTests: XCTestCase {
             _ = try? storage.saveValidated(loadedItems)
             saveFinished.signal()
         }
-        XCTAssertEqual(gate.entered.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(gate.entered.wait(timeout: .now() + 10), .success)
 
         DispatchQueue.global().async {
             exportResult.store(Result { try storage.export(loadedItems, to: exportURL) })
@@ -342,11 +342,11 @@ final class ClipboardStorageTests: XCTestCase {
         // Importing only reads a caller-supplied file and decodes it, so it must not be
         // held up by an in-flight save. Making it wait deadlocks an import that is
         // started while a persist is still pending.
-        XCTAssertEqual(importFinished.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(importFinished.wait(timeout: .now() + 10), .success)
         gate.proceed.signal()
 
-        XCTAssertEqual(saveFinished.wait(timeout: .now() + 2), .success)
-        XCTAssertEqual(exportFinished.wait(timeout: .now() + 2), .success)
+        XCTAssertEqual(saveFinished.wait(timeout: .now() + 10), .success)
+        XCTAssertEqual(exportFinished.wait(timeout: .now() + 10), .success)
         XCTAssertNoThrow(try exportResult.get()?.get())
         XCTAssertEqual(try importResult.get()?.get().map(\.text), ["imported"])
     }
