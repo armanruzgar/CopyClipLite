@@ -217,6 +217,116 @@ extension ClipboardStoreTests {
         XCTAssertGreaterThanOrEqual(store.items[0].lastCopiedAt, store.items[1].lastCopiedAt)
     }
 
+    /// Polls an external copy of `text` and returns once its read has finished but
+    /// before the result can reach the main actor.
+    private func finishBackgroundReadWithoutDelivering(
+        _ text: String,
+        in store: ClipboardStore,
+        pasteboard: ThreadSafeCapturePasteboard
+    ) {
+        // Earlier reads already signalled their change-count checks.
+        while pasteboard.backgroundChangeCountRead.wait(timeout: .now()) == .success {}
+        pasteboard.replaceContents(with: text)
+        let release = pasteboard.armGate()
+        store.pollPasteboardForChanges()
+        waitForBackgroundSignal(pasteboard.backgroundReadStarted)
+        release.signal()
+        waitForBackgroundSignal(pasteboard.backgroundChangeCountRead)
+        waitForBackgroundSignal(pasteboard.backgroundChangeCountRead)
+    }
+
+    func testCaptureDeliveredAfterAnInAppCopyIsRecordedBelowTheCopiedItem() async throws {
+        let pasteboard = ThreadSafeCapturePasteboard()
+        let store = try makeBackgroundCaptureStore(pasteboard: pasteboard)
+        defer { store.setMonitoringEnabled(false) }
+        try await captureSentinel("chosen", in: store, pasteboard: pasteboard)
+        let chosen = try XCTUnwrap(store.items.first)
+
+        finishBackgroundReadWithoutDelivering("external", in: store, pasteboard: pasteboard)
+        XCTAssertTrue(store.copy(chosen))
+        try await waitUntil("late capture") { store.items.count == 2 }
+
+        XCTAssertEqual(store.items.map(\.text), ["chosen", "external"])
+        XCTAssertEqual(store.items.map(\.copyCount), [2, 1])
+        XCTAssertEqual(store.lastCopiedID, chosen.id)
+    }
+
+    func testCaptureDeliveredAfterATransformedCopyIsRecordedBelowTheTransformedItem() async throws {
+        let pasteboard = ThreadSafeCapturePasteboard()
+        let store = try makeBackgroundCaptureStore(pasteboard: pasteboard)
+        defer { store.setMonitoringEnabled(false) }
+        try await captureSentinel("chosen", in: store, pasteboard: pasteboard)
+        let chosen = try XCTUnwrap(store.items.first)
+
+        finishBackgroundReadWithoutDelivering("external", in: store, pasteboard: pasteboard)
+        store.copyWithTransformation(chosen, transformation: .uppercase)
+        try await waitUntil("late capture") { store.items.count == 3 }
+
+        XCTAssertEqual(store.items.map(\.text), ["CHOSEN", "external", "chosen"])
+        XCTAssertEqual(store.items.map(\.copyCount), [1, 1, 1])
+        XCTAssertEqual(store.lastCopiedID, store.items.first?.id)
+    }
+
+    func testInAppCopyRacingABackgroundReadIsNotRecapturedOnTheNextPoll() async throws {
+        let pasteboard = ThreadSafeCapturePasteboard()
+        let store = try makeBackgroundCaptureStore(pasteboard: pasteboard)
+        defer { store.setMonitoringEnabled(false) }
+        try await captureSentinel("chosen", in: store, pasteboard: pasteboard)
+        let chosen = try XCTUnwrap(store.items.first)
+
+        finishBackgroundReadWithoutDelivering("external", in: store, pasteboard: pasteboard)
+        XCTAssertTrue(store.copy(chosen))
+        try await waitUntil("late capture") { store.items.count == 2 }
+        store.pollPasteboardForChanges()
+        try await captureSentinel("sentinel", in: store, pasteboard: pasteboard)
+
+        XCTAssertEqual(store.items.map(\.text), ["sentinel", "chosen", "external"])
+        XCTAssertEqual(store.items.map(\.copyCount), [1, 2, 1])
+    }
+
+    func testLateTextAndLinkCapturesAreRecordedBelowNewerItems() throws {
+        let copiedAt = Date(timeIntervalSinceReferenceDate: 1_000)
+        let capturedAt = copiedAt.addingTimeInterval(-1)
+        let newer = ClipboardItem(text: "chosen", createdAt: copiedAt, lastCopiedAt: copiedAt)
+        let older = ClipboardItem(
+            text: "older",
+            createdAt: capturedAt.addingTimeInterval(-1),
+            lastCopiedAt: capturedAt.addingTimeInterval(-1)
+        )
+        let link = ClipboardLinkContent(
+            url: try XCTUnwrap(URL(string: "https://example.com/late")),
+            title: nil
+        )
+
+        let withText = ClipboardHistoryRules.recordingText(
+            "late",
+            rtfData: nil,
+            htmlData: nil,
+            sourceApplication: nil,
+            capturedAt: capturedAt,
+            in: [newer, older]
+        )
+        let withLink = ClipboardHistoryRules.recordingLink(
+            link,
+            sourceApplication: nil,
+            capturedAt: capturedAt,
+            in: [newer, older]
+        )
+        let withRecapturedText = ClipboardHistoryRules.recordingText(
+            "older",
+            rtfData: nil,
+            htmlData: nil,
+            sourceApplication: nil,
+            capturedAt: capturedAt,
+            in: [newer, older]
+        )
+
+        XCTAssertEqual(withText.map(\.text), ["chosen", "late", "older"])
+        XCTAssertEqual(withLink.map(\.id)[0], newer.id)
+        XCTAssertEqual(withLink[1].linkURL, link.url)
+        XCTAssertEqual(withRecapturedText.map(\.text), ["chosen", "older"])
+    }
+
     func testBackgroundCaptureCompletingAfterQuitCleanupIsDiscarded() async throws {
         let pasteboard = ThreadSafeCapturePasteboard()
         let defaults = makeDefaults()

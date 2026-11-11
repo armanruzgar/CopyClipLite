@@ -90,9 +90,9 @@ enum ClipboardHistoryRules {
                 existing.rtfData = rtfData
                 existing.htmlData = htmlData
             }
-            items.insert(existing, at: 0)
+            insert(existing, byLastCopiedAtInto: &items)
         } else {
-            items.insert(
+            insert(
                 ClipboardItem(
                     text: text,
                     rtfData: rtfData,
@@ -101,7 +101,7 @@ enum ClipboardHistoryRules {
                     lastCopiedAt: capturedAt,
                     sourceApplication: sourceApplication
                 ),
-                at: 0
+                byLastCopiedAtInto: &items
             )
         }
         return items
@@ -162,16 +162,16 @@ enum ClipboardHistoryRules {
             if isNewestRepresentation {
                 existing.sourceApplication = sourceApplication ?? existing.sourceApplication
             }
-            items.insert(existing, at: 0)
+            insert(existing, byLastCopiedAtInto: &items)
         } else {
-            items.insert(
+            insert(
                 ClipboardItem(
                     link: link,
                     createdAt: capturedAt,
                     lastCopiedAt: capturedAt,
                     sourceApplication: sourceApplication
                 ),
-                at: 0
+                byLastCopiedAtInto: &items
             )
         }
         return items
@@ -193,6 +193,16 @@ enum ClipboardHistoryRules {
                 in: items
             )
         }
+    }
+
+    /// A capture recorded after a newer in-app copy belongs below it, not on top.
+    /// Ties go first, so in-order captures still land at index 0.
+    private static func insert(
+        _ item: ClipboardItem,
+        byLastCopiedAtInto items: inout [ClipboardItem]
+    ) {
+        let index = items.firstIndex { $0.lastCopiedAt <= item.lastCopiedAt } ?? items.endIndex
+        items.insert(item, at: index)
     }
 
     private static func contentMatchesForImport(
