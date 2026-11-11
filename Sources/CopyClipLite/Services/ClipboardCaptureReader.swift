@@ -32,6 +32,11 @@ struct CapturedTextResult: Sendable {
     let warning: String?
 }
 
+struct ClipboardImageReadResult: Sendable {
+    let candidate: ClipboardImageCandidate?
+    let skippedOversizedRepresentation: Bool
+}
+
 extension ClipboardImageCandidate {
     var hasFileURLSource: Bool {
         sources.contains {
@@ -115,36 +120,57 @@ enum ClipboardCaptureReader {
     }
 
     static func image(from pasteboard: ClipboardCapturePasteboard) -> ClipboardImageCandidate? {
+        imageRead(from: pasteboard, fileURLs: fileURLs(from: pasteboard)).candidate
+    }
+
+    /// Keeps PNG plus one fallback representation; anything larger than the processor
+    /// accepts is dropped as soon as it is read instead of being queued.
+    static func imageRead(
+        from pasteboard: ClipboardCapturePasteboard,
+        fileURLs: [URL]
+    ) -> ClipboardImageReadResult {
         var sources: [ClipboardImageCandidateSource] = []
-        if let data = pasteboard.data(forType: .png) {
-            sources.append(.data(data, isPNG: true))
-        }
-        if let data = pasteboard.data(forType: .tiff) {
-            sources.append(.data(data, isPNG: false))
-        }
-        for type in [
-            NSPasteboard.PasteboardType("public.jpeg"),
-            NSPasteboard.PasteboardType("public.heic"),
-            NSPasteboard.PasteboardType("public.heif")
-        ] {
-            if let data = pasteboard.data(forType: type) {
-                sources.append(.data(data, isPNG: false))
+        var skippedOversizedRepresentation = false
+        for (type, isPNG) in imageRepresentationTypes {
+            guard sources.count < maximumImageDataRepresentations else { break }
+            guard let data = pasteboard.data(forType: type) else { continue }
+            guard data.count <= ClipboardImageProcessor.maximumInputBytes else {
+                skippedOversizedRepresentation = true
+                continue
             }
+            sources.append(.data(data, isPNG: isPNG))
         }
-        let fileURLs = fileURLs(from: pasteboard)
         if fileURLs.count == 1,
            let fileURL = fileURLs.first,
            isImageFile(fileURL) {
             sources.append(.fileURL(fileURL))
         }
-        return sources.isEmpty ? nil : ClipboardImageCandidate(sources: sources)
+        return ClipboardImageReadResult(
+            candidate: sources.isEmpty ? nil : ClipboardImageCandidate(sources: sources),
+            skippedOversizedRepresentation: skippedOversizedRepresentation
+        )
     }
+
+    private static let maximumImageDataRepresentations = 2
+    private static let imageRepresentationTypes: [(NSPasteboard.PasteboardType, isPNG: Bool)] = [
+        (.png, true),
+        (.tiff, false),
+        (NSPasteboard.PasteboardType("public.jpeg"), false),
+        (NSPasteboard.PasteboardType("public.heic"), false),
+        (NSPasteboard.PasteboardType("public.heif"), false)
+    ]
 
     /// A file copied in Finder, or a link copied from a browser. Image files are
     /// deliberately excluded: they belong to the image pipeline, which normalizes
     /// them to PNG so the clip survives the original file being moved or deleted.
     static func link(from pasteboard: ClipboardCapturePasteboard) -> ClipboardLinkContent? {
-        let fileURLs = fileURLs(from: pasteboard)
+        link(from: pasteboard, fileURLs: fileURLs(from: pasteboard))
+    }
+
+    static func link(
+        from pasteboard: ClipboardCapturePasteboard,
+        fileURLs: [URL]
+    ) -> ClipboardLinkContent? {
         if fileURLs.count == 1,
            let fileURL = fileURLs.first,
            !isImageFile(fileURL) {
@@ -169,7 +195,7 @@ enum ClipboardCaptureReader {
         ((url as NSURL).filePathURL ?? url).standardizedFileURL
     }
 
-    private static func isImageFile(_ url: URL) -> Bool {
+    static func isImageFile(_ url: URL) -> Bool {
         let resourceType = try? url.resourceValues(forKeys: [.contentTypeKey]).contentType
         if resourceType?.conforms(to: .image) == true
             || UTType(filenameExtension: url.pathExtension)?.conforms(to: .image) == true {

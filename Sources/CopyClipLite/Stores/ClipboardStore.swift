@@ -14,6 +14,22 @@ struct ClipboardStoreClock: Sendable {
 
 @MainActor
 final class ClipboardStore: ObservableObject {
+    /// Content deleted while a pasteboard read was in flight; the read must not bring it back.
+    private struct CaptureDiscard {
+        var texts: Set<String> = []
+        var imageHashes: Set<String> = []
+        var linkURLs: Set<URL> = []
+
+        func discards(_ outcome: ClipboardImageCaptureOutcome) -> Bool {
+            switch outcome {
+            case let .processed(image, _):
+                return image.contentHash.map(imageHashes.contains) ?? false
+            case let .failed(_, request):
+                return request.associatedText.map { texts.contains($0.text) } ?? false
+            }
+        }
+    }
+
     private enum DefaultsKey {
         static let historyLimit = "historyLimit"
         static let retentionPolicy = "retentionPolicy"
@@ -99,6 +115,9 @@ final class ClipboardStore: ObservableObject {
     private var clearCopiedIndicatorTask: Task<Void, Never>?
     private let persistenceCoordinator: ClipboardPersistenceCoordinator
     private let imageCaptureQueue: ClipboardImageCaptureQueue
+    private let captureReadQueue: ClipboardCaptureReadQueue?
+    private var pendingCaptureReads: [UInt64: CaptureDiscard] = [:]
+    private var nextCaptureReadID: UInt64 = 0
     private let pasteboardWriter: any ClipboardPasteboardWriting
     private let dragProviderFactory: ClipboardDragProviderFactory
     private let transferCoordinator: ClipboardStoreTransferCoordinator
@@ -205,7 +224,8 @@ final class ClipboardStore: ObservableObject {
         imageProcessor: any ClipboardImageProcessing = ClipboardImageProcessingService(),
         pasteboardWriter: (any ClipboardPasteboardWriting)? = nil,
         thumbnailLoader: (@Sendable (ClipboardItem) -> ClipboardThumbnailResult?)? = nil,
-        clock: ClipboardStoreClock = .live
+        clock: ClipboardStoreClock = .live,
+        captureExecution: ClipboardCaptureExecution? = nil
     ) {
         let loadResult = storage.loadResult()
         let ignoredApplicationStore = ClipboardIgnoredApplicationStore(defaults: defaults)
@@ -234,6 +254,12 @@ final class ClipboardStore: ObservableObject {
         self.backupInventory = (try? storage.backupInventory()) ?? .empty
         self.imageCleanupPending = storage.imageCleanupPending
         let usesSystemPasteboard = pasteboard is NSPasteboard
+        switch captureExecution ?? (usesSystemPasteboard ? .background : .inline) {
+        case .inline:
+            self.captureReadQueue = nil
+        case .background:
+            self.captureReadQueue = ClipboardCaptureReadQueue(pasteboard: pasteboard)
+        }
         self.sourceApplicationProvider = sourceApplicationProvider
             ?? (usesSystemPasteboard ? ClipboardSourceApplication.frontmost : { nil })
         self.usesWorkspaceSourceTracking = sourceApplicationProvider == nil && usesSystemPasteboard
@@ -685,13 +711,16 @@ final class ClipboardStore: ObservableObject {
         guard !removedIDs.isEmpty else { return false }
         let removedImageHashes = Set(removedItems.compactMap { $0.image?.contentHash })
         let removedTexts = Set(removedItems.filter { $0.contentKind == .text }.map(\.text))
-        imageCaptureQueue.discardOutcomes { outcome in
-            switch outcome {
-            case let .processed(image, _):
-                return image.contentHash.map(removedImageHashes.contains) ?? false
-            case let .failed(_, request):
-                return request.associatedText.map { removedTexts.contains($0.text) } ?? false
-            }
+        let removed = CaptureDiscard(
+            texts: removedTexts,
+            imageHashes: removedImageHashes,
+            linkURLs: Set(removedItems.compactMap(\.linkURL))
+        )
+        imageCaptureQueue.discardOutcomes(where: removed.discards)
+        for id in pendingCaptureReads.keys {
+            pendingCaptureReads[id]?.texts.formUnion(removed.texts)
+            pendingCaptureReads[id]?.imageHashes.formUnion(removed.imageHashes)
+            pendingCaptureReads[id]?.linkURLs.formUnion(removed.linkURLs)
         }
         items.removeAll { removedIDs.contains($0.id) }
         thumbnailCache.invalidate(ids: removedIDs)
@@ -763,58 +792,109 @@ final class ClipboardStore: ObservableObject {
             return
         }
 
-        let capturedText = ClipboardCaptureReader.text(from: pasteboard)
-        if let warning = capturedText.warning {
-            captureWarning = warning
-        }
-
-        let fileURLs = ClipboardCaptureReader.fileURLs(from: pasteboard)
-        if fileURLs.count > 1 {
-            recordFiles(
-                fileURLs,
-                textWarning: capturedText.warning,
-                sourceApplication: sourceApplication,
-                capturedAt: clock.now()
-            )
-            return
-        }
-
-        if let candidate = ClipboardCaptureReader.image(from: pasteboard),
-           candidate.hasFileURLSource
-            || !ClipboardCaptureReader.hasRichTextCopy(pasteboard, snapshot: capturedText.snapshot) {
-            let capturedAt = clock.now()
-            processImageCandidate(
-                candidate,
-                associatedText: capturedText.snapshot,
-                associatedWarning: capturedText.warning,
+        let capturedAt = clock.now()
+        guard let captureReadQueue else {
+            record(
+                ClipboardCaptureReader.snapshot(from: pasteboard),
                 sourceApplication: sourceApplication,
                 capturedAt: capturedAt
             )
             return
         }
 
-        if let link = ClipboardCaptureReader.link(from: pasteboard) {
-            captureWarning = capturedText.warning
-            record(
-                link,
+        let readID = nextCaptureReadID
+        nextCaptureReadID &+= 1
+        pendingCaptureReads[readID] = CaptureDiscard()
+        captureReadQueue.read(expectedChangeCount: currentChangeCount) { [weak self] snapshot in
+            self?.completeCaptureRead(
+                readID,
+                snapshot: snapshot,
                 sourceApplication: sourceApplication,
-                capturedAt: clock.now()
+                capturedAt: capturedAt
             )
+        }
+    }
+
+    private func completeCaptureRead(
+        _ readID: UInt64,
+        snapshot: ClipboardCaptureSnapshot?,
+        sourceApplication: ClipboardSourceApplication?,
+        capturedAt: Date
+    ) {
+        guard let discard = pendingCaptureReads.removeValue(forKey: readID),
+              let snapshot,
+              isMonitoringEnabled,
+              !isTransferBusy,
+              !isApplicationIgnored(sourceApplication) else {
             return
         }
-
-        guard let textSnapshot = capturedText.snapshot else {
-            return
-        }
-
         record(
-            textSnapshot.text,
-            rtfData: textSnapshot.rtfData,
-            htmlData: textSnapshot.htmlData,
+            snapshot,
             sourceApplication: sourceApplication,
-            capturedAt: clock.now()
+            capturedAt: capturedAt,
+            discarding: discard
         )
-        captureWarning = capturedText.warning
+    }
+
+    private func record(
+        _ snapshot: ClipboardCaptureSnapshot,
+        sourceApplication: ClipboardSourceApplication?,
+        capturedAt: Date,
+        discarding discard: CaptureDiscard = CaptureDiscard()
+    ) {
+        let textWarning = snapshot.textWarning
+        switch snapshot.content {
+        case let .files(fileURLs):
+            let fileURLs = fileURLs.filter { !discard.linkURLs.contains($0) }
+            guard !fileURLs.isEmpty else { return }
+            recordFiles(
+                fileURLs,
+                textWarning: textWarning,
+                sourceApplication: sourceApplication,
+                capturedAt: capturedAt
+            )
+        case let .image(candidate, associatedText):
+            if let textWarning {
+                captureWarning = textWarning
+            }
+            processImageCandidate(
+                candidate,
+                associatedText: associatedText,
+                associatedWarning: textWarning,
+                sourceApplication: sourceApplication,
+                capturedAt: capturedAt,
+                discarding: discard
+            )
+        case let .oversizedImage(associatedText):
+            captureWarning = ClipboardImageProcessingError.encodedDataTooLarge.localizedDescription
+            if let associatedText, !discard.texts.contains(associatedText.text) {
+                record(
+                    associatedText.text,
+                    rtfData: associatedText.rtfData,
+                    htmlData: associatedText.htmlData,
+                    sourceApplication: sourceApplication,
+                    capturedAt: capturedAt
+                )
+            }
+        case let .link(link):
+            guard !discard.linkURLs.contains(link.url) else { return }
+            captureWarning = textWarning
+            record(link, sourceApplication: sourceApplication, capturedAt: capturedAt)
+        case let .text(textSnapshot):
+            guard !discard.texts.contains(textSnapshot.text) else { return }
+            record(
+                textSnapshot.text,
+                rtfData: textSnapshot.rtfData,
+                htmlData: textSnapshot.htmlData,
+                sourceApplication: sourceApplication,
+                capturedAt: capturedAt
+            )
+            captureWarning = textWarning
+        case .empty:
+            if let textWarning {
+                captureWarning = textWarning
+            }
+        }
     }
 
     private func shouldIgnoreCurrentPasteboard() -> Bool {
@@ -830,7 +910,8 @@ final class ClipboardStore: ObservableObject {
         associatedText: CapturedTextSnapshot?,
         associatedWarning: String?,
         sourceApplication: ClipboardSourceApplication?,
-        capturedAt: Date
+        capturedAt: Date,
+        discarding discard: CaptureDiscard
     ) {
         imageCaptureQueue.enqueue(
             ClipboardImageCaptureRequest(
@@ -841,7 +922,7 @@ final class ClipboardStore: ObservableObject {
                 capturedAt: capturedAt
             )
         ) { [weak self] outcome in
-            guard let self else { return }
+            guard let self, !discard.discards(outcome) else { return }
             switch outcome {
             case let .processed(image, request):
                 record(
@@ -869,6 +950,7 @@ final class ClipboardStore: ObservableObject {
     }
 
     private func invalidatePendingImageCaptures() {
+        pendingCaptureReads.removeAll()
         imageCaptureQueue.invalidate()
     }
 
