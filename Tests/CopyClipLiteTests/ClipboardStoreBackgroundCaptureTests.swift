@@ -97,7 +97,8 @@ extension ClipboardStoreTests {
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: defaults ?? makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
-            captureExecution: .background
+            captureExecution: .background,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
     }
 

@@ -17,7 +17,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: defaults
+            defaults: defaults,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertEqual(store.historyLimit, 10)
@@ -30,7 +31,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: defaults
+            defaults: defaults,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         store.pauseMonitoring(for: .fiveMinutes)
@@ -74,7 +76,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         let artifact = try await store.prepareImport(from: importURL)
@@ -119,7 +122,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: directory.appendingPathComponent("Store")),
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let image = ClipboardImagePayload(data: try makePNGData(width: 2, height: 2), width: 2, height: 2)
         let cases = [
@@ -174,7 +178,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         let artifact = try await store.prepareImport(from: importURL)
@@ -235,7 +240,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: directory.appendingPathComponent("Store")),
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         let startedAt = ContinuousClock.now
@@ -311,7 +317,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         store.setHistoryLimit(10)
 
@@ -336,7 +343,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let artifact = try await store.prepareImport(from: importURL)
 
@@ -367,7 +375,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let artifact = try await store.prepareImport(from: importURL)
         let plan = store.importPlan(for: artifact)
@@ -413,7 +422,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let imageItem = try XCTUnwrap(store.items.first(where: { $0.isImage }))
         faultSwitch.failManifestWrite = true

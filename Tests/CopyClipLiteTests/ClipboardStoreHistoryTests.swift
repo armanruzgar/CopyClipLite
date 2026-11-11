@@ -22,7 +22,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertEqual(Set(store.items.map(\.text)), ["pinned", "recent"])
@@ -44,7 +45,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         store.setHistoryLimit(10)
@@ -69,7 +71,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let originalItems = store.items
 
@@ -99,7 +102,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: defaults,
-            clock: ClipboardStoreClock(now: { now }, sleep: { _ in })
+            clock: ClipboardStoreClock(now: { now }, sleep: { _ in }),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let originalItems = store.items
 
@@ -130,7 +134,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         store.setHistoryLimit(10)
 
@@ -152,7 +157,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            pasteboardWriter: writer
+            pasteboardWriter: writer,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let item = try XCTUnwrap(store.items.first)
 
@@ -173,7 +179,8 @@ extension ClipboardStoreTests {
                 pasteboard: makePasteboard(),
                 storage: storage,
                 defaults: makeIsolatedDefaults(),
-                pasteboardWriter: writer
+                pasteboardWriter: writer,
+                dragStagingDirectory: makeIsolatedDragStagingDirectory()
             )
             let item = try XCTUnwrap(store.items.first)
 
@@ -196,7 +203,8 @@ extension ClipboardStoreTests {
                 pasteboard: makePasteboard(),
                 storage: storage,
                 defaults: makeIsolatedDefaults(),
-                pasteboardWriter: writer
+                pasteboardWriter: writer,
+                dragStagingDirectory: makeIsolatedDragStagingDirectory()
             )
             let itemsBeforeCopy = store.items
 
@@ -236,7 +244,8 @@ extension ClipboardStoreTests {
                 pasteboard: makePasteboard(),
                 storage: storage,
                 defaults: makeIsolatedDefaults(),
-                pasteboardWriter: writer
+                pasteboardWriter: writer,
+                dragStagingDirectory: makeIsolatedDragStagingDirectory()
             )
             let item = try XCTUnwrap(store.items.first)
 
@@ -266,7 +275,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            pasteboardWriter: writer
+            pasteboardWriter: writer,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         pasteboard.clearContents()
@@ -298,7 +308,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: defaults,
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         await store.clearHistory()
@@ -315,7 +326,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         XCTAssertEqual(store.backupInventory.count, 1)
 
@@ -334,7 +346,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         XCTAssertEqual(store.backupLocation, storage.fileURL.deletingLastPathComponent())
 
@@ -355,7 +368,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: FailingBackupPurgeRepository(storage: storage),
             defaults: defaults,
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         await store.clearHistory()
@@ -379,7 +393,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         store.setHistoryLimit(10)
 
@@ -402,7 +417,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         store.togglePin(try XCTUnwrap(store.items.first(where: { $0.id == itemToPin.id })))
@@ -430,7 +446,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            pasteboardWriter: writer
+            pasteboardWriter: writer,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let item = try XCTUnwrap(store.items.first)
         let pasteController = makePasteControllerWithPermissionError(
@@ -461,7 +478,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         pasteboard.clearContents()
@@ -486,7 +504,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let selectedIDs: Set<ClipboardItem.ID> = [first.id, second.id]
 
@@ -515,7 +534,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: repository,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         repository.blockNextSave()
 

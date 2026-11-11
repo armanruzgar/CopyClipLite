@@ -352,7 +352,8 @@ final class SettingsTransferStateTests: XCTestCase {
             pasteboard: StubStorePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
     }
 

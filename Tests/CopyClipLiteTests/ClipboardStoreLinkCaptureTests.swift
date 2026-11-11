@@ -20,7 +20,8 @@ extension ClipboardStoreTests {
                 pasteboard: pasteboard,
                 storage: storage,
                 defaults: makeIsolatedDefaults(),
-                sourceApplicationProvider: { nil }
+                sourceApplicationProvider: { nil },
+                dragStagingDirectory: makeIsolatedDragStagingDirectory()
             )
             defer { store.setMonitoringEnabled(false) }
             pasteboard.setString(urlString, forType: .URL)
@@ -84,7 +85,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
         pasteboard.setString("keep this valid clip", forType: .string)

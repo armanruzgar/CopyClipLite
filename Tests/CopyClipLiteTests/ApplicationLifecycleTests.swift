@@ -44,7 +44,8 @@ final class ApplicationLifecycleTests: XCTestCase {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: defaults,
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let item = try XCTUnwrap(store.items.first)
         store.togglePin(item)
@@ -73,7 +74,8 @@ final class ApplicationLifecycleTests: XCTestCase {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: defaults,
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let delegate = makeDelegate(hasCompletedWelcome: true, store: store)
 
@@ -90,7 +92,8 @@ final class ApplicationLifecycleTests: XCTestCase {
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         let delegate = makeDelegate(hasCompletedWelcome: true, store: store)

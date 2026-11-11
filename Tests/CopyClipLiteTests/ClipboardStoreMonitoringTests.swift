@@ -18,7 +18,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { sourceApplication }
+            sourceApplicationProvider: { sourceApplication },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         pasteboard.clearContents()
@@ -41,7 +42,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { sourceApplication }
+            sourceApplicationProvider: { sourceApplication },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         store.addIgnoredApplication(sourceApplication)
 
@@ -64,7 +66,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertEqual(
@@ -85,7 +88,8 @@ extension ClipboardStoreTests {
                 pasteboard: pasteboard,
                 storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
                 defaults: makeIsolatedDefaults(),
-                sourceApplicationProvider: { nil }
+                sourceApplicationProvider: { nil },
+                dragStagingDirectory: makeIsolatedDragStagingDirectory()
             )
             if pause {
                 store.pauseMonitoring(for: .fiveMinutes)
@@ -120,7 +124,8 @@ extension ClipboardStoreTests {
             clock: ClipboardStoreClock(
                 now: { clock.now() },
                 sleep: { try await clock.sleep(nanoseconds: $0) }
-            )
+            ),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertTrue(store.isMonitoringEnabled)
@@ -142,7 +147,8 @@ extension ClipboardStoreTests {
             clock: ClipboardStoreClock(
                 now: { clock.now() },
                 sleep: { try await clock.sleep(nanoseconds: $0) }
-            )
+            ),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertFalse(store.isMonitoringEnabled)
@@ -171,7 +177,8 @@ extension ClipboardStoreTests {
             clock: ClipboardStoreClock(
                 now: { clock.now() },
                 sleep: { try await clock.sleep(nanoseconds: $0) }
-            )
+            ),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         store.pauseMonitoring(for: .fiveMinutes)
         await fulfillment(of: [clock.expectSleepers()], timeout: 10)
@@ -202,7 +209,8 @@ extension ClipboardStoreTests {
             clock: ClipboardStoreClock(
                 now: { clock.now() },
                 sleep: { try await clock.sleep(nanoseconds: $0) }
-            )
+            ),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertFalse(store.isMonitoringEnabled)
@@ -221,7 +229,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: defaults
+            defaults: defaults,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         store.clearUnpinnedHistoryOnQuitIfNeeded()
 
@@ -243,7 +252,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: FailingBackupPurgeRepository(storage: storage),
             defaults: defaults,
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertFalse(store.clearUnpinnedHistoryOnQuitIfNeeded())
@@ -263,7 +273,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: defaults
+            defaults: defaults,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let pngData = try makePNGData(width: 6, height: 6)
 
@@ -286,7 +297,8 @@ extension ClipboardStoreTests {
             pasteboard: reloadedPasteboard,
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let reloadedStoreImage = try XCTUnwrap(reloadedStore.items.first)
         XCTAssertTrue(reloadedStoreImage.isPinned)

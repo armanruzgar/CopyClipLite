@@ -5,7 +5,10 @@
 #   check_test_leftovers.sh report <dir>     print what changed after the tests
 #
 # Set COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS=1 to fail when test preference files or test
-# UserDefaults directories (CopyClipLiteTestDefaults-*) exist after the run.
+# UserDefaults directories (CopyClipLiteTestDefaults-*) exist after the run, when test
+# drag staging directories (CopyClipLiteTestDragStaging-*) are left behind, or when the
+# run created, emptied or otherwise modified the installed app's drag staging folder
+# ($TMPDIR/CopyClipLite-Drag).
 set -euo pipefail
 
 MODE="${1:?usage: check_test_leftovers.sh snapshot|report <dir>}"
@@ -13,6 +16,7 @@ STATE_DIR="${2:?usage: check_test_leftovers.sh snapshot|report <dir>}"
 PREFERENCES_DIR="$HOME/Library/Preferences"
 APP_SUPPORT_DIR="$HOME/Library/Application Support/CopyClipLite"
 TEMP_DIR="${TMPDIR:-/tmp}"
+APP_DRAG_DIR="${TEMP_DIR%/}/CopyClipLite-Drag"
 PASTEBOARD_SENTINEL="copycliplite-leftover-check-sentinel"
 
 list_preferences() {
@@ -30,8 +34,19 @@ list_app_support() {
   fi
 }
 
+# One line per entry (path, inode, mode, size, modification time), or "absent", so
+# creating, emptying, recreating or changing the folder all change the fingerprint.
+fingerprint_app_drag_dir() {
+  if [[ -e "$APP_DRAG_DIR" || -L "$APP_DRAG_DIR" ]]; then
+    find "$APP_DRAG_DIR" -exec stat -f '%N %i %p %z %m' {} + 2>/dev/null | sort
+  else
+    echo "absent"
+  fi
+}
+
 test_preference_pattern='CopyClip|Tests[-.][0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\.plist$'
 test_defaults_prefix='CopyClipLiteTestDefaults-'
+test_drag_staging_prefix='CopyClipLiteTestDragStaging-'
 installed_app_preferences='^(io\.github\.38st\.CopyClipLite|io\.github\.38st\.CopyClipLite\.preview|com\.local\.CopyClipLite)\.plist$'
 
 case "$MODE" in
@@ -40,6 +55,7 @@ case "$MODE" in
     list_preferences >"$STATE_DIR/preferences.txt"
     list_temp >"$STATE_DIR/temp.txt"
     list_app_support >"$STATE_DIR/app-support.txt"
+    fingerprint_app_drag_dir >"$STATE_DIR/app-drag.txt"
     # Only on CI: locally this would overwrite the user's clipboard.
     if [[ -n "${CI:-}" ]]; then
       printf '%s' "$PASTEBOARD_SENTINEL" | pbcopy || true
@@ -105,6 +121,30 @@ case "$MODE" in
         status=1
       fi
     fi
+    { grep -E "^$test_drag_staging_prefix" "$STATE_DIR/temp-after.txt" || true; } >"$STATE_DIR/drag-staging-dirs.txt"
+    drag_staging_count="$(wc -l <"$STATE_DIR/drag-staging-dirs.txt" | tr -d ' ')"
+    echo "== Test drag staging directories in $TEMP_DIR: $drag_staging_count"
+    if [[ "$drag_staging_count" -gt 0 ]]; then
+      sed 's/^/  /' "$STATE_DIR/drag-staging-dirs.txt"
+      if [[ "${COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS:-0}" == "1" ]]; then
+        echo "::error::The test run left $drag_staging_count drag staging directories behind."
+        status=1
+      fi
+    fi
+
+    fingerprint_app_drag_dir >"$STATE_DIR/app-drag-after.txt"
+    echo "== App drag staging folder $APP_DRAG_DIR:"
+    if cmp -s "$STATE_DIR/app-drag.txt" "$STATE_DIR/app-drag-after.txt"; then
+      echo "  unchanged"
+    else
+      echo "  changed by the test run:"
+      diff "$STATE_DIR/app-drag.txt" "$STATE_DIR/app-drag-after.txt" | sed 's/^/    /' || true
+      if [[ "${COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS:-0}" == "1" ]]; then
+        echo "::error::The test run created or modified $APP_DRAG_DIR, the installed app's drag folder."
+        status=1
+      fi
+    fi
+
     comm -13 "$STATE_DIR/temp.txt" "$STATE_DIR/temp-after.txt" >"$STATE_DIR/temp-new.txt"
     echo "== New entries in $TEMP_DIR: $(wc -l <"$STATE_DIR/temp-new.txt" | tr -d ' ')"
     sed -E 's/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/<UUID>/g' \

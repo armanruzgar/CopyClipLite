@@ -483,7 +483,8 @@ final class PasteTargetControllerTests: XCTestCase {
             pasteboard: pasteboard,
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         return (store, try XCTUnwrap(store.items.first))
     }

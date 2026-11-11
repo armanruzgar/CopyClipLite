@@ -94,6 +94,16 @@ final class ClipboardDragFileStager: @unchecked Sendable {
 }
 
 struct ClipboardDragProviderFactory {
+    /// Where the installed app stages image files for drags: `$TMPDIR/CopyClipLite-Drag`.
+    /// Creating a factory empties its staging directory, so anything that is not the
+    /// running app (tests in particular) must pass a directory of its own instead.
+    static var defaultStagingDirectory: URL {
+        FileManager.default.temporaryDirectory.appendingPathComponent(
+            "CopyClipLite-Drag",
+            isDirectory: true
+        )
+    }
+
     private let imageReader: any ClipboardImageReading
     private let fileManager: FileManager
     private let stagingDirectory: URL
@@ -101,15 +111,11 @@ struct ClipboardDragProviderFactory {
     init(
         imageReader: any ClipboardImageReading,
         fileManager: FileManager = .default,
-        stagingDirectory: URL? = nil
+        stagingDirectory: URL
     ) {
         self.imageReader = imageReader
         self.fileManager = fileManager
         self.stagingDirectory = stagingDirectory
-            ?? fileManager.temporaryDirectory.appendingPathComponent(
-                "CopyClipLite-Drag",
-                isDirectory: true
-            )
         Self.prepareStagingDirectory(
             self.stagingDirectory,
             fileManager: fileManager

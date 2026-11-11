@@ -24,7 +24,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            pasteboardWriter: writer
+            pasteboardWriter: writer,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertTrue(store.copy(try XCTUnwrap(store.items.first)))
@@ -52,7 +53,8 @@ extension ClipboardStoreTests {
                 pasteboard: makePasteboard(),
                 storage: storage,
                 defaults: makeIsolatedDefaults(),
-                pasteboardWriter: writer
+                pasteboardWriter: writer,
+                dragStagingDirectory: makeIsolatedDragStagingDirectory()
             )
 
             XCTAssertTrue(store.copy(try XCTUnwrap(store.items.first)))
@@ -88,7 +90,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            pasteboardWriter: writer
+            pasteboardWriter: writer,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertTrue(store.copy(try XCTUnwrap(store.items.first)))
@@ -115,7 +118,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let item = try XCTUnwrap(store.items.first)
 
@@ -141,7 +145,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            pasteboardWriter: writer
+            pasteboardWriter: writer,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let originalItems = store.items
 
@@ -165,7 +170,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let item = try XCTUnwrap(store.items.first(where: { $0.text == "hello world" }))
 
@@ -184,7 +190,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let item = try XCTUnwrap(store.items.first)
 
@@ -204,7 +211,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertTrue(
@@ -230,7 +238,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            pasteboardWriter: writer
+            pasteboardWriter: writer,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         XCTAssertTrue(
@@ -251,7 +260,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let attributed = NSAttributedString(string: "RTF only")
         let rtf = try attributed.data(
@@ -272,7 +282,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.setString(String(repeating: "a", count: 20_001), forType: .string))
@@ -288,7 +299,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         pasteboard.clearContents()
         pasteboard.setString("plain survives", forType: .string)
@@ -309,7 +321,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         pasteboard.clearContents()
         XCTAssertTrue(pasteboard.setString("plain survives", forType: .string))
@@ -335,7 +348,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let html = Data("<p>HTML <strong>only</strong></p>".utf8)
         pasteboard.clearContents()
@@ -358,7 +372,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let item = try XCTUnwrap(store.items.first)
 
@@ -379,7 +394,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let item = try XCTUnwrap(store.items.first)
 

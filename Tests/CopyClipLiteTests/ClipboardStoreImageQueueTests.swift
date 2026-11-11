@@ -14,7 +14,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let pngData = try makePNGData(width: 3, height: 3)
 
@@ -49,7 +50,8 @@ extension ClipboardStoreTests {
             imageProcessor: ExternalizingStressImageProcessor(
                 payloadByteCount: payloadByteCount
             ),
-            pasteboardWriter: writer
+            pasteboardWriter: writer,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         store.setHistoryLimit(200)
 
@@ -124,7 +126,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let item = try XCTUnwrap(store.items.first)
         let oldThumbnailName = try XCTUnwrap(item.image?.thumbnailFileName)
@@ -186,7 +189,8 @@ extension ClipboardStoreTests {
                     data: thumbnailData,
                     fileName: item.image?.thumbnailFileName ?? "test-thumbnail.png"
                 )
-            }
+            },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         store.setHistoryLimit(10)
         let storedImage = try XCTUnwrap(store.items.first(where: \.isImage))
@@ -214,7 +218,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeIsolatedDefaults(),
-            imageProcessor: processor
+            imageProcessor: processor,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         pasteboard.clearContents()
@@ -239,7 +244,8 @@ extension ClipboardStoreTests {
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
-            imageProcessor: processor
+            imageProcessor: processor,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         pasteboard.clearContents()
@@ -276,7 +282,8 @@ extension ClipboardStoreTests {
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
-            imageProcessor: processor
+            imageProcessor: processor,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         pasteboard.clearContents()
@@ -300,7 +307,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let pngData = try makePNGData(width: 2, height: 2)
 
@@ -328,7 +336,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let pngData = try makePNGData(width: 2, height: 2)
 
@@ -363,7 +372,8 @@ extension ClipboardStoreTests {
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
-            imageProcessor: SequencedImageProcessor()
+            imageProcessor: SequencedImageProcessor(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         pasteboard.clearContents()
@@ -409,7 +419,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         pasteboard.clearContents()
@@ -434,7 +445,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let pngData = try makePNGData(width: 4, height: 4)
 
@@ -460,7 +472,8 @@ extension ClipboardStoreTests {
             pasteboard: reloadedPasteboard,
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let reloadedStoreImage = try XCTUnwrap(
             reloadedStore.items.first(where: { $0.id == imageID })
@@ -475,7 +488,8 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeIsolatedDefaults()
+            defaults: makeIsolatedDefaults(),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let pngData = try makePNGData(width: 5, height: 5)
 
@@ -498,7 +512,8 @@ extension ClipboardStoreTests {
             pasteboard: reloadedPasteboard,
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let reloadedStoreImage = try XCTUnwrap(reloadedStore.items.first)
         XCTAssertTrue(reloadedStoreImage.isPinned)

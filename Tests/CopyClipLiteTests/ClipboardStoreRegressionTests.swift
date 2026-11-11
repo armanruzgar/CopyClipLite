@@ -16,7 +16,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
         let notice = try XCTUnwrap(store.storageErrorMessage)
@@ -56,7 +57,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
         pasteboard.setString("new clip", forType: .string)
@@ -78,7 +80,8 @@ extension ClipboardStoreTests {
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
-            imageProcessor: processor
+            imageProcessor: processor,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
         let rtfData = try XCTUnwrap(
@@ -112,7 +115,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
         pasteboard.setString("caption", forType: .string)
@@ -137,7 +141,8 @@ extension ClipboardStoreTests {
             defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             imageProcessor: processor,
-            clock: ClipboardStoreClock(now: { now }, sleep: { _ in })
+            clock: ClipboardStoreClock(now: { now }, sleep: { _ in }),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
         let directory = FileManager.default.temporaryDirectory
@@ -169,7 +174,8 @@ extension ClipboardStoreTests {
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
         store.setHistoryLimit(200)
@@ -251,7 +257,8 @@ extension ClipboardStoreTests {
                 sleep: { try await Task.sleep(nanoseconds: $0) }
             ),
             persistenceQueue: persistenceQueue,
-            scheduleDelayedSave: { delayedSaves.append($0) }
+            scheduleDelayedSave: { delayedSaves.append($0) },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
         let imageItem = try XCTUnwrap(store.items.first)
@@ -297,7 +304,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: defaults,
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
 
@@ -318,7 +326,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: defaults,
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
 
@@ -334,7 +343,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
             defaults: defaults,
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
         XCTAssertNil(defaults.object(forKey: "quitCleanupPending"))
@@ -356,7 +366,8 @@ extension ClipboardStoreTests {
             pasteboard: makePasteboard(),
             storage: FailingBackupPurgeRepository(storage: storage),
             defaults: defaults,
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
 
@@ -388,7 +399,8 @@ extension ClipboardStoreTests {
             defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             pasteboardWriter: StubPasteboardWriter(result: .success),
-            clock: ClipboardStoreClock(now: { now }, sleep: { _ in })
+            clock: ClipboardStoreClock(now: { now }, sleep: { _ in }),
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         defer { store.setMonitoringEnabled(false) }
         let original = try XCTUnwrap(store.items.first)
@@ -400,6 +412,45 @@ extension ClipboardStoreTests {
         XCTAssertEqual(store.items.count, 2)
         XCTAssertEqual(transformed.createdAt, now)
         XCTAssertEqual(transformed.lastCopiedAt, now)
+    }
+
+    // MARK: Drag staging isolation
+
+    func testStoreWithInjectedDragStagingDirectoryLeavesOtherDragFoldersAlone() throws {
+        let fileManager = FileManager.default
+        let root: URL = try makeTemporaryDirectory()
+        // Stands in for the installed app's $TMPDIR/CopyClipLite-Drag with a drag in progress.
+        let sentinel: URL = root.appendingPathComponent("CopyClipLite-Drag", isDirectory: true)
+        let session: URL = sentinel.appendingPathComponent("in-progress", isDirectory: true)
+        try fileManager.createDirectory(at: session, withIntermediateDirectories: true)
+        let stagedFile: URL = session.appendingPathComponent("CopyClip-Image.png")
+        let stagedData = Data("drag in progress".utf8)
+        try stagedData.write(to: stagedFile)
+        try fileManager.setAttributes([.posixPermissions: 0o755], ofItemAtPath: sentinel.path)
+        let pastDate = Date(timeIntervalSince1970: 1_700_000_000)
+        try fileManager.setAttributes([.modificationDate: pastDate], ofItemAtPath: sentinel.path)
+        let injected: URL = root.appendingPathComponent("Injected", isDirectory: true)
+
+        let store = ClipboardStore(
+            pasteboard: makePasteboard(),
+            storage: ClipboardStorage(appDirectory: root.appendingPathComponent("Store")),
+            defaults: makeIsolatedDefaults(),
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: injected
+        )
+        defer { store.setMonitoringEnabled(false) }
+
+        XCTAssertEqual(try fileManager.contentsOfDirectory(atPath: sentinel.path), ["in-progress"])
+        XCTAssertEqual(try fileManager.contentsOfDirectory(atPath: session.path), ["CopyClip-Image.png"])
+        XCTAssertEqual(try Data(contentsOf: stagedFile), stagedData)
+        let sentinelAttributes = try fileManager.attributesOfItem(atPath: sentinel.path)
+        let sentinelPermissions = sentinelAttributes[.posixPermissions] as? Int
+        let sentinelModified = sentinelAttributes[.modificationDate] as? Date
+        XCTAssertEqual(sentinelPermissions, 0o755)
+        XCTAssertEqual(sentinelModified, pastDate)
+        let injectedAttributes = try fileManager.attributesOfItem(atPath: injected.path)
+        let injectedPermissions = injectedAttributes[.posixPermissions] as? Int
+        XCTAssertEqual(injectedPermissions, 0o700)
     }
 }
 

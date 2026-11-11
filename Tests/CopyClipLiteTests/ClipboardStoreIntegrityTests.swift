@@ -39,7 +39,8 @@ extension ClipboardStoreTests {
             let processor = GatedFirstImageProcessor()
             let store = ClipboardStore(
                 pasteboard: board, storage: storage, defaults: makeIsolatedDefaults(),
-                sourceApplicationProvider: { nil }, imageProcessor: processor
+                sourceApplicationProvider: { nil }, imageProcessor: processor,
+                dragStagingDirectory: makeIsolatedDragStagingDirectory()
             )
             defer { store.setMonitoringEnabled(false) }
 
@@ -87,7 +88,8 @@ extension ClipboardStoreTests {
             var source = excluded
             let store = ClipboardStore(
                 pasteboard: board, storage: storage, defaults: makeIsolatedDefaults(),
-                sourceApplicationProvider: { source }, imageProcessor: processor
+                sourceApplicationProvider: { source }, imageProcessor: processor,
+                dragStagingDirectory: makeIsolatedDragStagingDirectory()
             )
             defer { store.setMonitoringEnabled(false) }
             let png = try makePNGData(width: 3, height: 3)
@@ -137,7 +139,8 @@ extension ClipboardStoreTests {
         try storage.backup(items, reason: "pre-import")
         let store = ClipboardStore(
             pasteboard: makePasteboard(), storage: storage, defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let sidecar = storage.imageDirectoryURL.appendingPathComponent(try XCTUnwrap(items[0].image?.fileName))
         try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: sidecar.path)
@@ -175,7 +178,8 @@ extension ClipboardStoreTests {
         let oldItems = try storage.saveValidated([ClipboardItem(image: payload)])
         let store = ClipboardStore(
             pasteboard: makePasteboard(), storage: storage, defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let sidecar = storage.imageDirectoryURL.appendingPathComponent(try XCTUnwrap(oldItems[0].image?.fileName))
         try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: sidecar.path)
@@ -208,7 +212,8 @@ extension ClipboardStoreTests {
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         let store = ClipboardStore(
             pasteboard: makePasteboard(), storage: storage, defaults: defaults,
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let sidecar = storage.imageDirectoryURL.appendingPathComponent(try XCTUnwrap(items[0].image?.fileName))
         try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: sidecar.path)
@@ -228,7 +233,8 @@ extension ClipboardStoreTests {
         try storage.saveValidated([ClipboardItem(text: "text")])
         let store = ClipboardStore(
             pasteboard: makePasteboard(), storage: storage, defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         try FileManager.default.removeItem(at: storage.imageDirectoryURL)
         try Data("not a directory".utf8).write(to: storage.imageDirectoryURL)
@@ -270,7 +276,8 @@ extension ClipboardStoreTests {
             try storage.saveValidated([first, second])
             let store = ClipboardStore(
                 pasteboard: makePasteboard(), storage: storage, defaults: makeIsolatedDefaults(),
-                sourceApplicationProvider: { nil }
+                sourceApplicationProvider: { nil },
+                dragStagingDirectory: makeIsolatedDragStagingDirectory()
             )
             let artifact = try await store.prepareImport(
                 data: ClipboardTransferCodec.encode([incoming]), sourceFileName: "merge.json"
@@ -296,7 +303,8 @@ extension ClipboardStoreTests {
         try storage.saveValidated([item])
         let store = ClipboardStore(
             pasteboard: makePasteboard(), storage: storage, defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         XCTAssertEqual(store.items.count, 1)
         XCTAssertEqual(store.items.first?.lastCopiedDescription, "Unknown date")

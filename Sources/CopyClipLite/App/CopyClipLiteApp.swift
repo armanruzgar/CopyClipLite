@@ -164,7 +164,11 @@ struct CopyClipLiteApp: App {
 private enum CopyClipAppRuntime {
     static let store: ClipboardStore = {
         LegacyDefaultsMigrator.migrateIfNeeded()
-        return ClipboardStore()
+        // The staging directory is required so that only the app itself, never a
+        // test, cleans up the shared drag folder in $TMPDIR.
+        return ClipboardStore(
+            dragStagingDirectory: ClipboardDragProviderFactory.defaultStagingDirectory
+        )
     }()
 }
 

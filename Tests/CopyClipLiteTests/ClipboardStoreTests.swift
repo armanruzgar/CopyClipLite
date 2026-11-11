@@ -521,7 +521,8 @@ final class ClipboardStoreTests: XCTestCase {
             defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             persistenceQueue: persistenceQueue,
-            scheduleDelayedSave: { delayedSaves.append($0) }
+            scheduleDelayedSave: { delayedSaves.append($0) },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let existingItem = try XCTUnwrap(store.items.first)
         fault.shouldBlock = true
@@ -585,7 +586,8 @@ final class ClipboardStoreTests: XCTestCase {
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeIsolatedDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
 
         let artifact = try await store.prepareImport(from: importURL)
@@ -598,7 +600,8 @@ final class ClipboardStoreTests: XCTestCase {
             storage: storage,
             defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
-            pasteboardWriter: writer
+            pasteboardWriter: writer,
+            dragStagingDirectory: makeIsolatedDragStagingDirectory()
         )
         let importedImage = try XCTUnwrap(
             reloadedStore.items.first(where: { $0.contentKind == .image })
