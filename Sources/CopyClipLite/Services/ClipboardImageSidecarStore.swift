@@ -23,6 +23,16 @@ struct ClipboardImageSidecarStore: @unchecked Sendable {
         return try? Data(contentsOf: url)
     }
 
+    func isMissingImageData(for item: ClipboardItem) -> Bool {
+        guard let image = item.image, image.data == nil else { return false }
+        guard let fileName = image.fileName,
+              let url = safeURL(for: fileName),
+              let values = try? url.resourceValues(forKeys: [.isRegularFileKey]) else {
+            return true
+        }
+        return values.isRegularFile != true
+    }
+
     func thumbnailData(for item: ClipboardItem) -> Data? {
         guard let image = item.image else { return nil }
         if let data = image.thumbnailData { return data }

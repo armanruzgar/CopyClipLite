@@ -134,11 +134,46 @@ enum ClipboardImageProcessor {
             throw ClipboardImageProcessingError.dimensionsTooLarge
         }
 
-        let outputMaximumDimension = maximumOutputDimension(width: width, height: height)
+        var outputMaximumDimension = maximumOutputDimension(width: width, height: height)
+        for attempt in 1...maximumEncodingAttempts {
+            try Task.checkCancellation()
+            // Each attempt releases its full-size bitmap and PNG before the next one starts.
+            let result = try autoreleasepool {
+                try encodeCanonical(source: source, maximumPixelSize: outputMaximumDimension)
+            }
+            switch result {
+            case let .fits(payload):
+                return payload
+            case let .tooLarge(encodedByteCount, encodedMaximumDimension):
+                let nextDimension = reducedOutputDimension(
+                    from: encodedMaximumDimension,
+                    encodedByteCount: encodedByteCount
+                )
+                guard attempt < maximumEncodingAttempts,
+                      nextDimension >= minimumReducedOutputDimension else {
+                    throw ClipboardImageProcessingError.encodedDataTooLarge
+                }
+                outputMaximumDimension = nextDimension
+            }
+        }
+        throw ClipboardImageProcessingError.encodedDataTooLarge
+    }
 
+    private static let maximumEncodingAttempts = 6
+    private static let minimumReducedOutputDimension = 256
+
+    private enum CanonicalEncodingResult {
+        case fits(ClipboardImagePayload)
+        case tooLarge(encodedByteCount: Int, maximumDimension: Int)
+    }
+
+    private static func encodeCanonical(
+        source: CGImageSource,
+        maximumPixelSize: Int
+    ) throws -> CanonicalEncodingResult {
         let normalizedOptions: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
-            kCGImageSourceThumbnailMaxPixelSize: outputMaximumDimension,
+            kCGImageSourceThumbnailMaxPixelSize: maximumPixelSize,
             kCGImageSourceCreateThumbnailWithTransform: true,
             kCGImageSourceShouldCacheImmediately: true,
         ]
@@ -157,7 +192,10 @@ enum ClipboardImageProcessor {
             throw ClipboardImageProcessingError.conversionFailed
         }
         guard pngData.count <= maximumEncodedBytes else {
-            throw ClipboardImageProcessingError.encodedDataTooLarge
+            return .tooLarge(
+                encodedByteCount: pngData.count,
+                maximumDimension: max(normalizedImage.width, normalizedImage.height)
+            )
         }
 
         guard let thumbnailImage = makeThumbnail(from: normalizedImage, maximumPixelSize: 96),
@@ -165,14 +203,23 @@ enum ClipboardImageProcessor {
             throw ClipboardImageProcessingError.conversionFailed
         }
 
-        return ClipboardImagePayload(
+        return .fits(ClipboardImagePayload(
             data: pngData,
             thumbnailData: thumbnailData,
             width: normalizedImage.width,
             height: normalizedImage.height,
             byteCount: pngData.count,
             contentHash: contentHash(for: pngData)
-        )
+        ))
+    }
+
+    /// PNG size grows roughly with pixel count, so scale each side by the square root of
+    /// the overshoot, with headroom, and always shrink by at least 10%.
+    static func reducedOutputDimension(from dimension: Int, encodedByteCount: Int) -> Int {
+        guard encodedByteCount > 0 else { return dimension }
+        let ratio = sqrt(Double(maximumEncodedBytes) / Double(encodedByteCount)) * 0.95
+        let scale = min(ratio, 0.9)
+        return max(Int((Double(dimension) * scale).rounded(.down)), 1)
     }
 
     static func maximumOutputDimension(width: Int, height: Int) -> Int {

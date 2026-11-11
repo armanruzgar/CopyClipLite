@@ -196,6 +196,57 @@ final class ClipboardImageProcessorTests: XCTestCase {
         )
     }
 
+    func testNoisyPhotoWhosePNGExceedsLimitIsDownscaledUntilItFits() throws {
+        let side = 3_072
+        let source = try makeNoisyPNGData(side: side)
+        XCTAssertLessThanOrEqual(source.count, ClipboardImageProcessor.maximumInputBytes)
+        XCTAssertGreaterThan(source.count, ClipboardImageProcessor.maximumEncodedBytes)
+
+        ProcessMemoryMetrics.relieveAllocatorPressure()
+        let baseline = try ProcessMemoryMetrics.residentSizeBytes()
+        let sampler = ProcessResidentPeakSampler(baselineResidentBytes: baseline)
+        sampler.start()
+        let payload = try ClipboardImageProcessor.process(
+            ClipboardImageCandidate(data: source, isPNG: true)
+        )
+        let peak = sampler.stop()
+
+        let data = try XCTUnwrap(payload.data)
+        XCTAssertLessThanOrEqual(data.count, ClipboardImageProcessor.maximumEncodedBytes)
+        XCTAssertEqual(payload.byteCount, data.count)
+        XCTAssertEqual(payload.contentHash, ClipboardImageProcessor.contentHash(for: data))
+        XCTAssertLessThan(payload.width, side)
+        XCTAssertEqual(payload.width, payload.height)
+        XCTAssertGreaterThanOrEqual(payload.width, side / 2)
+        XCTAssertNotNil(payload.thumbnailData)
+        XCTAssertLessThan(
+            ProcessMemoryMetrics.positiveGrowth(from: baseline, to: peak),
+            UInt64(ClipboardImageProcessor.maximumProcessingResidentGrowthBytes)
+        )
+
+        let reprocessed = try ClipboardImageProcessor.process(
+            ClipboardImageCandidate(data: data, isPNG: true)
+        )
+        XCTAssertEqual(reprocessed.data, data)
+        XCTAssertEqual(reprocessed.contentHash, payload.contentHash)
+        XCTAssertEqual(reprocessed.width, payload.width)
+        XCTAssertEqual(reprocessed.height, payload.height)
+    }
+
+    func testReducedOutputDimensionAlwaysShrinksAndTracksOvershoot() {
+        let limit = ClipboardImageProcessor.maximumEncodedBytes
+        XCTAssertEqual(
+            ClipboardImageProcessor.reducedOutputDimension(from: 4_096, encodedByteCount: limit + 1),
+            Int((4_096 * 0.9).rounded(.down))
+        )
+        let reduced = ClipboardImageProcessor.reducedOutputDimension(
+            from: 4_096,
+            encodedByteCount: limit * 4
+        )
+        XCTAssertLessThan(reduced, 2_048)
+        XCTAssertGreaterThan(reduced, 1_800)
+    }
+
     func testOutputDimensionCalculationPreservesReasonableImagesAndBoundsLargeOnes() {
         XCTAssertEqual(
             ClipboardImageProcessor.maximumOutputDimension(width: 4_000, height: 3_000),
@@ -266,6 +317,45 @@ final class ClipboardImageProcessorTests: XCTestCase {
                 1,
                 nil
             )
+        )
+        CGImageDestinationAddImage(destination, image, nil)
+        XCTAssertTrue(CGImageDestinationFinalize(destination))
+        return data as Data
+    }
+
+    /// Low-amplitude deterministic noise: compact enough as a source PNG to stay under
+    /// the input limit, but still well over the stored-image limit when re-encoded.
+    private func makeNoisyPNGData(side: Int) throws -> Data {
+        let bytesPerRow = side * 4
+        var pixels = Data(count: bytesPerRow * side)
+        pixels.withUnsafeMutableBytes { rawBuffer in
+            let words = rawBuffer.bindMemory(to: UInt32.self)
+            var state: UInt32 = 0x5EED_1234
+            for pixel in 0..<words.count {
+                state ^= state << 13
+                state ^= state >> 17
+                state ^= state << 5
+                // Little-endian RGBX: three low-entropy colour channels, opaque.
+                words[pixel] = 0xFF_A0_80_60 &+ (state & 0x00_07_07_07)
+            }
+        }
+        let provider = try XCTUnwrap(CGDataProvider(data: pixels as CFData))
+        let image = try XCTUnwrap(CGImage(
+            width: side,
+            height: side,
+            bitsPerComponent: 8,
+            bitsPerPixel: 32,
+            bytesPerRow: bytesPerRow,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGBitmapInfo(rawValue: CGImageAlphaInfo.noneSkipLast.rawValue),
+            provider: provider,
+            decode: nil,
+            shouldInterpolate: false,
+            intent: .defaultIntent
+        ))
+        let data = NSMutableData()
+        let destination = try XCTUnwrap(
+            CGImageDestinationCreateWithData(data, UTType.png.identifier as CFString, 1, nil)
         )
         CGImageDestinationAddImage(destination, image, nil)
         XCTAssertTrue(CGImageDestinationFinalize(destination))

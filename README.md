@@ -143,10 +143,12 @@ tells you when something was refused.
 | Text | Skipped over 20,000 characters |
 | Image input | Skipped over 30 MB, or 16,384 px on either side |
 | Image output | Downscaled proportionally into roughly a 16.8-megapixel budget |
-| Stored image | Skipped if the encoded PNG still exceeds 10 MB |
+| Stored image | Stored as PNG of at most 10 MB; a larger PNG is downscaled further until it fits |
 | RTF / HTML | 10 MB each, per clip |
+| Export file | 100 MB in total; export stops early and says so when the history is larger |
 
-An ordinary large photo is downscaled rather than refused. Rich text is kept only when a plain-text
+An ordinary large photo is downscaled rather than refused: a detailed photo whose PNG would exceed
+10 MB is stored at a smaller size, and is skipped only if it still cannot fit. Rich text is kept only when a plain-text
 version can also be extracted. Image copy-back writes PNG and lets macOS synthesize other
 representations on demand, rather than decoding a TIFF on the main thread.
 

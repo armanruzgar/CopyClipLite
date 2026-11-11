@@ -1223,6 +1223,88 @@ final class ClipboardStorageTests: XCTestCase {
         )
     }
 
+    func testExportNamesImageClipWithMissingSidecarAndBackupSkipsIt() throws {
+        let directory = try makeTemporaryDirectory()
+        let storage = ClipboardStorage(appDirectory: directory.appendingPathComponent("Store"))
+        let exportURL = directory.appendingPathComponent("missing-sidecar.json")
+        let brokenID = UUID()
+        let intactID = UUID()
+        storage.save([
+            ClipboardItem(text: "plain text"),
+            ClipboardItem(
+                id: brokenID,
+                text: "Holiday photo",
+                image: ClipboardImagePayload(
+                    data: try makePNGData(width: 3, height: 2),
+                    width: 3,
+                    height: 2
+                )
+            ),
+            ClipboardItem(
+                id: intactID,
+                image: ClipboardImagePayload(
+                    data: try makePNGData(width: 2, height: 2),
+                    width: 2,
+                    height: 2
+                )
+            ),
+        ])
+        let stored = storage.load()
+        let brokenFileName = try XCTUnwrap(
+            stored.first { $0.id == brokenID }?.image?.fileName
+        )
+        try FileManager.default.removeItem(
+            at: storage.imageDirectoryURL.appendingPathComponent(brokenFileName)
+        )
+
+        XCTAssertThrowsError(try storage.export(stored, to: exportURL)) { error in
+            guard case let .incompatibleExport(reason) = error as? ClipboardStorageError else {
+                return XCTFail("Expected incompatible export, got \(error)")
+            }
+            XCTAssertTrue(reason.hasPrefix("1 image clip is missing its image data"), reason)
+            XCTAssertTrue(reason.contains("Holiday photo"), reason)
+            XCTAssertTrue(reason.contains("3 x 2"), reason)
+            XCTAssertTrue(reason.contains("last copied"), reason)
+            XCTAssertTrue(reason.contains("Delete it from the history"), reason)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: exportURL.path))
+
+        let backupURL = try storage.backup(stored, reason: "pre-import")
+        let document = try JSONDecoder().decode(
+            ClipboardTransferDocument.self,
+            from: Data(contentsOf: backupURL)
+        )
+        XCTAssertEqual(
+            Set(document.items.compactMap(\.id)),
+            Set(stored.map(\.id)).subtracting([brokenID])
+        )
+        XCTAssertTrue(document.items.contains { $0.id == intactID })
+    }
+
+    func testExportFailsEarlyWithSizeGuidanceWhenHistoryExceedsTransferLimit() throws {
+        let directory = try makeTemporaryDirectory()
+        let storage = ClipboardStorage(appDirectory: directory.appendingPathComponent("Store"))
+        let exportURL = directory.appendingPathComponent("too-large.json")
+        let html = Data(count: ClipboardStorage.maximumImportedRichTextBytes)
+        let items = (0..<12).map { index in
+            ClipboardItem(text: "rich \(index)", htmlData: html)
+        }
+
+        XCTAssertThrowsError(try storage.export(items, to: exportURL)) { error in
+            guard case let .incompatibleExport(reason) = error as? ClipboardStorageError else {
+                return XCTFail("Expected incompatible export, got \(error)")
+            }
+            let limit = ByteCountFormatter.string(
+                fromByteCount: Int64(ClipboardStorage.maximumImportBytes),
+                countStyle: .file
+            )
+            XCTAssertTrue(reason.hasPrefix("the history is at least "), reason)
+            XCTAssertTrue(reason.contains("more than the \(limit) export limit"), reason)
+            XCTAssertTrue(reason.contains("Delete or unpin large image clips"), reason)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: exportURL.path))
+    }
+
     private func makeTemporaryDirectory() throws -> URL {
         let directory = FileManager.default.temporaryDirectory
             .appendingPathComponent("CopyClipLiteTests-\(UUID().uuidString)", isDirectory: true)

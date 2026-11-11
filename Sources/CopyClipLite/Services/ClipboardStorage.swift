@@ -235,10 +235,86 @@ struct ClipboardStorage: @unchecked Sendable {
                 ClipboardTransferCodec.itemLimitExceededReason(itemCount: items.count)
             )
         }
-        let portableItems = try items.map(imageSidecars.portableItem)
+        let brokenItems = items.filter(imageSidecars.isMissingImageData)
+        guard brokenItems.isEmpty else {
+            throw ClipboardStorageError.incompatibleExport(
+                Self.missingImageDataReason(for: brokenItems)
+            )
+        }
+
+        var portableItems: [ClipboardItem] = []
+        portableItems.reserveCapacity(items.count)
+        var estimatedByteCount = 0
+        for item in items {
+            let portable: ClipboardItem
+            do {
+                portable = try imageSidecars.portableItem(item)
+            } catch ClipboardStorageError.missingImageData {
+                throw ClipboardStorageError.incompatibleExport(
+                    Self.missingImageDataReason(for: [item])
+                )
+            }
+            estimatedByteCount += Self.minimumEncodedByteCount(of: portable)
+            guard estimatedByteCount <= Self.maximumImportBytes else {
+                throw ClipboardStorageError.incompatibleExport(
+                    Self.exportTooLargeReason(minimumByteCount: estimatedByteCount)
+                )
+            }
+            portableItems.append(portable)
+        }
         let data = try ClipboardTransferCodec.encode(portableItems)
         try data.write(to: url, options: [.atomic])
         try? fileManager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+    }
+
+    /// A lower bound on the item's size in the exported JSON: binary fields are written
+    /// as base64, which is 4/3 of their raw size.
+    private static func minimumEncodedByteCount(of item: ClipboardItem) -> Int {
+        let binaryByteCount = (item.image?.data?.count ?? 0)
+            + (item.image?.thumbnailData?.count ?? 0)
+            + (item.rtfData?.count ?? 0)
+            + (item.htmlData?.count ?? 0)
+        return (binaryByteCount + 2) / 3 * 4 + item.text.utf8.count
+    }
+
+    private static func exportTooLargeReason(minimumByteCount: Int) -> String {
+        let size = ByteCountFormatter.string(
+            fromByteCount: Int64(minimumByteCount),
+            countStyle: .file
+        )
+        let limit = ByteCountFormatter.string(
+            fromByteCount: Int64(maximumImportBytes),
+            countStyle: .file
+        )
+        return "the history is at least \(size), more than the \(limit) export limit. "
+            + "Delete or unpin large image clips, then export again."
+    }
+
+    private static func missingImageDataReason(for items: [ClipboardItem]) -> String {
+        let listedLimit = 3
+        var descriptions = items.prefix(listedLimit).map(brokenImageDescription)
+        if items.count > listedLimit {
+            descriptions.append("and \(items.count - listedLimit) more")
+        }
+        let subject = items.count == 1
+            ? "1 image clip is missing its image data"
+            : "\(items.count) image clips are missing their image data"
+        let object = items.count == 1 ? "it" : "them"
+        return "\(subject): \(descriptions.joined(separator: "; ")). "
+            + "Delete \(object) from the history, then export again."
+    }
+
+    private static func brokenImageDescription(_ item: ClipboardItem) -> String {
+        var details: [String] = []
+        if let image = item.image, image.width > 0, image.height > 0 {
+            details.append(image.dimensionsText)
+        }
+        details.append(
+            "last copied \(item.lastCopiedAt.formatted(date: .abbreviated, time: .shortened))"
+        )
+        let caption = item.text.copyClipPreview(limit: 40)
+        let title = caption.isEmpty ? "Image" : "Image “\(caption)”"
+        return "\(title) (\(details.joined(separator: ", ")))"
     }
 
     // Deliberately unlocked. This reads a caller-supplied file outside the store and
@@ -281,7 +357,15 @@ struct ClipboardStorage: @unchecked Sendable {
             .appendingPathExtension(
                 "\(reason)-\(Self.backupTimestampFormatter.string(from: Date()))-\(UUID().uuidString.prefix(8)).json"
             )
-        let portableItems = try items.map(imageSidecars.portableItem)
+        // A clip whose image file has gone missing cannot be restored anyway, and
+        // failing here would block every import.
+        let portableItems: [ClipboardItem] = try items.compactMap { item in
+            do {
+                return try imageSidecars.portableItem(item)
+            } catch ClipboardStorageError.missingImageData {
+                return nil
+            }
+        }
         let document = ClipboardTransferDocument(
             items: portableItems.map(ClipboardTransferItem.init)
         )
