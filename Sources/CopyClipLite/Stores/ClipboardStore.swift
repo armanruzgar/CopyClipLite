@@ -225,7 +225,9 @@ final class ClipboardStore: ObservableObject {
         pasteboardWriter: (any ClipboardPasteboardWriting)? = nil,
         thumbnailLoader: (@Sendable (ClipboardItem) -> ClipboardThumbnailResult?)? = nil,
         clock: ClipboardStoreClock = .live,
-        captureExecution: ClipboardCaptureExecution? = nil
+        captureExecution: ClipboardCaptureExecution? = nil,
+        persistenceQueue: DispatchQueue? = nil,
+        scheduleDelayedSave: (@Sendable (DispatchWorkItem) -> Void)? = nil
     ) {
         let loadResult = storage.loadResult()
         let ignoredApplicationStore = ClipboardIgnoredApplicationStore(defaults: defaults)
@@ -242,7 +244,16 @@ final class ClipboardStore: ObservableObject {
             pasteboard: pasteboard
         )
         self.dragProviderFactory = ClipboardDragProviderFactory(imageReader: storage)
-        let persistenceCoordinator = ClipboardPersistenceCoordinator(storage: storage)
+        let persistenceCoordinator = persistenceQueue.map {
+            ClipboardPersistenceCoordinator(
+                storage: storage,
+                queue: $0,
+                scheduleDelayedSave: scheduleDelayedSave
+            )
+        } ?? ClipboardPersistenceCoordinator(
+            storage: storage,
+            scheduleDelayedSave: scheduleDelayedSave
+        )
         self.persistenceCoordinator = persistenceCoordinator
         self.transferCoordinator = ClipboardStoreTransferCoordinator(
             transferService: ClipboardTransferService(storage: storage),

@@ -527,15 +527,21 @@ final class ClipboardStoreTests: XCTestCase {
         storage.save([ClipboardItem(text: "existing")])
         sourceStorage.save([ClipboardItem(text: "imported")])
         try sourceStorage.export(sourceStorage.load(), to: importURL)
+        let persistenceQueue = DispatchQueue(label: "ClipboardStoreTests.persistence")
+        let delayedSaves = DelayedSaves()
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
             defaults: makeDefaults(),
-            sourceApplicationProvider: { nil }
+            sourceApplicationProvider: { nil },
+            persistenceQueue: persistenceQueue,
+            scheduleDelayedSave: { delayedSaves.append($0) }
         )
         let existingItem = try XCTUnwrap(store.items.first)
         fault.shouldBlock = true
         store.togglePin(existingItem)
+        XCTAssertEqual(delayedSaves.count, 1)
+        delayedSaves.fire(on: persistenceQueue)
         await fulfillment(of: [fault.started], timeout: 10)
 
         let artifact = try await store.prepareImport(from: importURL)
@@ -552,7 +558,8 @@ final class ClipboardStoreTests: XCTestCase {
         XCTAssertEqual(store.historyLimit, 50)
         fault.allowCompletion.signal()
         _ = try await importTask.value
-        try await Task.sleep(nanoseconds: 250_000_000)
+        // Every save scheduled before or during the import now gets its turn.
+        await delayedSaves.fireAndDrain(on: persistenceQueue)
 
         let persistedTexts = Set(storage.load().map(\.text))
         switch strategy {

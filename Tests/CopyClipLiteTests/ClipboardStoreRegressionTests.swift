@@ -232,6 +232,8 @@ extension ClipboardStoreTests {
         try sourceStorage.export(sourceStorage.load(), to: importURL)
         let loaderGate = DispatchSemaphore(value: 0)
         let clock = ClockReadSignal()
+        let persistenceQueue = DispatchQueue(label: "ClipboardStoreRegressionTests.persistence")
+        let delayedSaves = DelayedSaves()
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
@@ -247,7 +249,9 @@ extension ClipboardStoreTests {
             clock: ClipboardStoreClock(
                 now: { clock.now() },
                 sleep: { try await Task.sleep(nanoseconds: $0) }
-            )
+            ),
+            persistenceQueue: persistenceQueue,
+            scheduleDelayedSave: { delayedSaves.append($0) }
         )
         defer { store.setMonitoringEnabled(false) }
         let imageItem = try XCTUnwrap(store.items.first)
@@ -269,7 +273,8 @@ extension ClipboardStoreTests {
         XCTAssertTrue(store.isTransferBusy)
         fault.allowCompletion.signal()
         _ = try await importTask.value
-        try await Task.sleep(nanoseconds: 300_000_000)
+        // Every save scheduled before or during the import now gets its turn.
+        await delayedSaves.fireAndDrain(on: persistenceQueue)
 
         XCTAssertEqual(storage.load().map(\.text), ["imported"])
         XCTAssertEqual(store.items.map(\.text), ["imported"])

@@ -48,12 +48,7 @@ final class ClipboardPersistenceCoordinatorTests: XCTestCase {
         }
 
         let flushed = try await coordinator.flush([ClipboardItem(text: "flushed")])
-        delayedSaves.fire(on: queue)
-        // Drain the queue, then the main actor, where the delayed save's completion would be queued.
-        await withCheckedContinuation { continuation in
-            queue.async { continuation.resume() }
-        }
-        await MainActor.run {}
+        await delayedSaves.fireAndDrain(on: queue)
 
         XCTAssertEqual(flushed.map(\.text), ["flushed"])
         XCTAssertEqual(storage.load().map(\.text), ["flushed"])
@@ -77,28 +72,6 @@ final class ClipboardPersistenceCoordinatorTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: commit.backupURL.path))
     }
 
-    /// Holds delayed saves so a test decides when their delay has elapsed.
-    private final class DelayedSaves: @unchecked Sendable {
-        private let lock = NSLock()
-        private var workItems: [DispatchWorkItem] = []
-
-        var count: Int {
-            lock.withLock { workItems.count }
-        }
-
-        func append(_ workItem: DispatchWorkItem) {
-            lock.withLock { workItems.append(workItem) }
-        }
-
-        func fire(on queue: DispatchQueue) {
-            let due = lock.withLock {
-                defer { workItems.removeAll() }
-                return workItems
-            }
-            due.forEach { queue.async(execute: $0) }
-        }
-    }
-
     private func temporaryDirectory() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent(
             "ClipboardPersistenceCoordinatorTests-\(UUID().uuidString)",
@@ -106,5 +79,38 @@ final class ClipboardPersistenceCoordinatorTests: XCTestCase {
         )
         addTeardownBlock { try? FileManager.default.removeItem(at: url) }
         return url
+    }
+}
+
+/// Holds delayed saves so a test decides when their delay has elapsed.
+final class DelayedSaves: @unchecked Sendable {
+    private let lock = NSLock()
+    private var workItems: [DispatchWorkItem] = []
+
+    var count: Int {
+        lock.withLock { workItems.count }
+    }
+
+    func append(_ workItem: DispatchWorkItem) {
+        lock.withLock { workItems.append(workItem) }
+    }
+
+    func fire(on queue: DispatchQueue) {
+        let due = lock.withLock {
+            defer { workItems.removeAll() }
+            return workItems
+        }
+        due.forEach { queue.async(execute: $0) }
+    }
+
+    /// Lets every pending delay elapse, then waits until whatever those saves did has landed:
+    /// the queue runs them in order, and each one hands its completion to the main actor.
+    func fireAndDrain(on queue: DispatchQueue) async {
+        fire(on: queue)
+        await withCheckedContinuation { continuation in
+            queue.async { continuation.resume() }
+        }
+        // The main actor runs jobs in the order they were enqueued, so this runs after the completions.
+        await Task { @MainActor in }.value
     }
 }
