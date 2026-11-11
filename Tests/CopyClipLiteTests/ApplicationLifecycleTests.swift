@@ -60,9 +60,9 @@ final class ApplicationLifecycleTests: XCTestCase {
             Notification(name: NSApplication.didResignActiveNotification)
         )
 
-        for _ in 0..<100 where storage.load().first?.isPinned != true {
-            await Task.yield()
-        }
+        let flush = try XCTUnwrap(delegate.resignActiveFlush)
+        let didFlush = await flush.value
+        XCTAssertTrue(didFlush)
         XCTAssertEqual(storage.load().first?.isPinned, true)
     }
 

@@ -21,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let activateApplication: @MainActor () -> Void
     private let cleanupWithoutStore: @MainActor () -> Void
     private var shouldSuppressInitialMainWindow: Bool
+    private(set) var resignActiveFlush: Task<Bool, Never>?
 
     override convenience init() {
         LegacyDefaultsMigrator.migrateIfNeeded()
@@ -87,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     func applicationWillResignActive(_ notification: Notification) {
         guard let store else { return }
-        Task { await store.flushPendingPersist() }
+        resignActiveFlush = Task { await store.flushPendingPersist() }
     }
 
     func consumeInitialWindowSuppression() -> Bool {

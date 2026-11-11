@@ -520,9 +520,7 @@ extension ClipboardStoreTests {
         repository.blockNextSave()
 
         let deletion = Task { await store.delete(item) }
-        for _ in 0..<100 where !repository.isSaveBlocked {
-            await Task.yield()
-        }
+        await fulfillment(of: [repository.saveBlockedExpectation], timeout: 10)
 
         XCTAssertTrue(repository.isSaveBlocked)
         XCTAssertTrue(store.items.isEmpty)
@@ -589,6 +587,7 @@ private final class BlockingSaveRepository: ClipboardStoreRepository, @unchecked
     private let proceed = DispatchSemaphore(value: 0)
     private var shouldBlock = false
     private var saveBlocked = false
+    let saveBlockedExpectation = XCTestExpectation(description: "save blocked")
 
     init(storage: ClipboardStorage) {
         self.storage = storage
@@ -620,6 +619,7 @@ private final class BlockingSaveRepository: ClipboardStoreRepository, @unchecked
             return true
         }
         if block {
+            saveBlockedExpectation.fulfill()
             proceed.wait()
             lock.withLock { saveBlocked = false }
         }
