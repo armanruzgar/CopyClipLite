@@ -217,7 +217,9 @@ struct ShortcutSettingsView: View {
                 if let errorMessage = hotkeyController.errorMessage {
                     SettingsErrorText(errorMessage)
                 }
-                Button("Reset to Default (⌥⌘V)") { hotkeyController.updateConfig(.default) }
+                Button("Reset to Default (\(HotkeyConfig.default.displayString))") {
+                    hotkeyController.updateConfig(.default)
+                }
             }
             Section("Direct Paste") {
                 Toggle("Copy and paste into the previous app", isOn: $store.directPasteEnabled)

@@ -31,6 +31,12 @@ struct HotkeyConfig: Codable, Equatable {
 
     static let `default` = HotkeyConfig(
         keyCode: kVK_ANSI_V,
+        modifiers: controlKey | optionKey
+    )
+
+    // ⌥⌘V shadows Finder's "Move Item Here", so it is only kept for users who had it.
+    static let legacyDefault = HotkeyConfig(
+        keyCode: kVK_ANSI_V,
         modifiers: cmdKey | optionKey
     )
 
@@ -170,12 +176,27 @@ struct HotkeyConfig: Codable, Equatable {
     }
 
     static func load(from defaults: UserDefaults = .standard) -> HotkeyConfig {
+        savedConfig(in: defaults) ?? .default
+    }
+
+    private static func savedConfig(in defaults: UserDefaults) -> HotkeyConfig? {
         guard let data = defaults.data(forKey: DefaultsKey.hotkeyConfig),
               let config = try? JSONDecoder().decode(HotkeyConfig.self, from: data),
               config.validationError == nil else {
-            return .default
+            return nil
         }
         return config
+    }
+
+    static func migrateLegacyDefaultIfNeeded(in defaults: UserDefaults = .standard) {
+        guard !defaults.bool(forKey: DefaultsKey.didMigrateLegacyDefault) else {
+            return
+        }
+        if savedConfig(in: defaults) == nil,
+           defaults.bool(forKey: DefaultsKey.hasCompletedWelcome) {
+            legacyDefault.save(to: defaults)
+        }
+        defaults.set(true, forKey: DefaultsKey.didMigrateLegacyDefault)
     }
 
     func save(to defaults: UserDefaults = .standard) {
@@ -186,6 +207,8 @@ struct HotkeyConfig: Codable, Equatable {
 
     enum DefaultsKey {
         static let hotkeyConfig = "hotkeyConfig"
+        static let hasCompletedWelcome = "hasCompletedWelcome"
+        static let didMigrateLegacyDefault = "didMigrateLegacyHotkeyDefaultV1"
     }
 
     private static let unsafeSingleModifierKeyCodes: Set<Int> = Set([

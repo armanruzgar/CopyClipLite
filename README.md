@@ -48,12 +48,12 @@ LaunchServices and Quick Look caches, and opens it.
 
 ## Using it
 
-Press <kbd>⌥</kbd><kbd>⌘</kbd><kbd>V</kbd> anywhere, or click the clipboard in your menu bar.
+Press <kbd>⌃</kbd><kbd>⌥</kbd><kbd>V</kbd> anywhere, or click the clipboard in your menu bar.
 Type to search, arrow to what you want, press <kbd>Return</kbd>.
 
 | Shortcut | Action |
 |---|---|
-| <kbd>⌥</kbd><kbd>⌘</kbd><kbd>V</kbd> | Open clipboard search — rebindable in Settings |
+| <kbd>⌃</kbd><kbd>⌥</kbd><kbd>V</kbd> | Open clipboard search — rebindable in Settings |
 | <kbd>↑</kbd> <kbd>↓</kbd> | Move through the list |
 | <kbd>Return</kbd> | Use the selected clip |
 | <kbd>⌘</kbd><kbd>1</kbd>–<kbd>⌘</kbd><kbd>9</kbd> | Jump straight to one of the first nine clips |

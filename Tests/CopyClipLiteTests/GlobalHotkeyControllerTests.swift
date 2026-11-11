@@ -106,6 +106,7 @@ final class GlobalHotkeyControllerTests: XCTestCase {
     func testMultiModifierSafetyRulesDoNotOverblockNearbyShortcuts() {
         let safeShortcuts = [
             HotkeyConfig.default,
+            HotkeyConfig.legacyDefault,
             HotkeyConfig(keyCode: kVK_ANSI_B, modifiers: cmdKey | optionKey),
             HotkeyConfig(keyCode: kVK_ANSI_K, modifiers: cmdKey | controlKey),
             HotkeyConfig(

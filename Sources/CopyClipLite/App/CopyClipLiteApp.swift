@@ -237,6 +237,11 @@ private enum LegacyDefaultsMigrator {
     ]
 
     static func migrateIfNeeded() {
+        migrateLegacyDomainIfNeeded()
+        HotkeyConfig.migrateLegacyDefaultIfNeeded()
+    }
+
+    private static func migrateLegacyDomainIfNeeded() {
         let defaults = UserDefaults.standard
         guard !defaults.bool(forKey: migrationKey),
               Bundle.main.bundleIdentifier != legacyBundleIdentifier,
