@@ -16,7 +16,22 @@ extension XCTestCase {
         guard let defaults = UserDefaults(suiteName: suiteName) else {
             preconditionFailure("UserDefaults rejected the test suite name \(suiteName)")
         }
+        let weakDefaults = WeakDefaultsBox()
+        weakDefaults.value = defaults
+        let testName: String = name
         addTeardownBlock {
+            // TEMPORARY diagnostics for CI: is the suite's instance still alive here?
+            if let path = ProcessInfo.processInfo.environment["COPYCLIP_DEFAULTS_DIAGNOSTICS_FILE"] {
+                let state: String = weakDefaults.value == nil ? "released" : "alive"
+                let line: String = "\(suiteName)\t\(state)\t\(testName)\n"
+                if let handle = FileHandle(forWritingAtPath: path) {
+                    handle.seekToEndOfFile()
+                    handle.write(Data(line.utf8))
+                    try? handle.close()
+                } else {
+                    try? Data(line.utf8).write(to: URL(fileURLWithPath: path))
+                }
+            }
             IsolatedTestDefaults.remove(suiteName: suiteName)
         }
         return defaults
@@ -50,4 +65,9 @@ enum IsolatedTestDefaults {
         // cfprefsd keeps a plist for every domain that was ever written, even once empty.
         try? FileManager.default.removeItem(at: preferencesFileURL(forSuiteName: suiteName))
     }
+}
+
+// TEMPORARY diagnostics box.
+final class WeakDefaultsBox: @unchecked Sendable {
+    weak var value: UserDefaults?
 }

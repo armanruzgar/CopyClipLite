@@ -2,19 +2,31 @@
 // UserDefaults suite under each cleanup strategy, both while the writing process is
 // still alive and after it has exited.
 //
-//   swift defaults_probe.swift write <list-file>   run the strategies, record suites
-//   swift defaults_probe.swift check <list-file>   report the files after exit
+//   swift defaults_probe.swift write <list-file> <scratch-dir>
+//   swift defaults_probe.swift check <list-file>
 import Foundation
 
 let preferences = FileManager.default.homeDirectoryForCurrentUser
     .appendingPathComponent("Library/Preferences", isDirectory: true)
 
 func fileURL(_ suite: String) -> URL {
-    preferences.appendingPathComponent("\(suite).plist")
+    suite.hasPrefix("/")
+        ? URL(fileURLWithPath: suite + ".plist")
+        : preferences.appendingPathComponent("\(suite).plist")
 }
 
 func fileState(_ suite: String) -> String {
-    guard let data = try? Data(contentsOf: fileURL(suite)) else { return "no file" }
+    guard suite.hasPrefix("/") else { return state(of: fileURL(suite)) }
+    let withExtension: String = state(of: fileURL(suite))
+    let bare: String = state(of: URL(fileURLWithPath: suite))
+    let inPreferences: String = state(of: preferences.appendingPathComponent(
+        URL(fileURLWithPath: suite).lastPathComponent + ".plist"
+    ))
+    return "path.plist: \(withExtension), path: \(bare), in Preferences: \(inPreferences)"
+}
+
+func state(of url: URL) -> String {
+    guard let data = try? Data(contentsOf: url) else { return "no file" }
     guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil),
           let dictionary = plist as? [String: Any] else {
         return "unreadable file (\(data.count) bytes)"
@@ -29,22 +41,35 @@ func writeKeys(_ defaults: UserDefaults) {
     defaults.set(Date(), forKey: "three")
 }
 
-func removeDomain(_ suite: String, _ defaults: UserDefaults) {
-    defaults.synchronize()
-    defaults.removePersistentDomain(forName: suite)
-    defaults.synchronize()
+func removeKeys(_ suite: String) {
+    autoreleasepool {
+        let defaults = UserDefaults(suiteName: suite)!
+        let keys: [String] = defaults.persistentDomain(forName: suite).map { Array($0.keys) } ?? []
+        for key in keys {
+            defaults.removeObject(forKey: key)
+        }
+        defaults.synchronize()
+    }
 }
 
-func removeKeys(_ suite: String, _ defaults: UserDefaults) {
-    let keys: [String] = defaults.persistentDomain(forName: suite).map { Array($0.keys) } ?? []
-    for key in keys {
-        defaults.removeObject(forKey: key)
+func removeDomain(_ suite: String) {
+    autoreleasepool {
+        let defaults = UserDefaults(suiteName: suite)!
+        defaults.synchronize()
+        defaults.removePersistentDomain(forName: suite)
+        defaults.synchronize()
     }
-    defaults.synchronize()
+}
+
+func spin(_ seconds: Double) {
+    RunLoop.main.run(until: Date(timeIntervalSinceNow: seconds))
 }
 
 func deleteFile(_ suite: String) {
     try? FileManager.default.removeItem(at: fileURL(suite))
+    if suite.hasPrefix("/") {
+        try? FileManager.default.removeItem(at: URL(fileURLWithPath: suite))
+    }
 }
 
 let arguments = CommandLine.arguments
@@ -61,43 +86,65 @@ if mode == "check" {
     exit(0)
 }
 
+let scratch = arguments[3]
 var records: [String] = []
-var liveDefaults: [UserDefaults] = []
+var retained: [UserDefaults] = []
 
-func run(_ label: String, _ body: (String, UserDefaults) -> Void) {
-    let suite = "CopyClipLiteProbe-\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suite)!
-    liveDefaults.append(defaults)
-    body(suite, defaults)
-    Thread.sleep(forTimeInterval: 2)
+func run(_ label: String, suite: String? = nil, retain: Bool, _ body: (String) -> Void) {
+    let suite = suite ?? "CopyClipLiteProbe-\(UUID().uuidString)"
+    autoreleasepool {
+        let defaults = UserDefaults(suiteName: suite)!
+        writeKeys(defaults)
+        if retain { retained.append(defaults) }
+    }
+    body(suite)
+    spin(2)
     print("\(label) | alive after 2 s: \(fileState(suite))")
     records.append("\(label)\t\(suite)")
 }
 
-run("P1 write, sync, removePersistentDomain, sync, delete file") { suite, defaults in
-    writeKeys(defaults)
-    removeDomain(suite, defaults)
+run("R1 released; removeKeys, delete", retain: false) { suite in
+    removeKeys(suite)
     deleteFile(suite)
 }
-run("P2 write, removeObject per key, sync, delete file") { suite, defaults in
-    writeKeys(defaults)
-    removeKeys(suite, defaults)
+run("R2 retained; removeKeys, delete", retain: true) { suite in
+    removeKeys(suite)
     deleteFile(suite)
 }
-run("P3 write, sync, delete file (no removal)") { suite, defaults in
-    writeKeys(defaults)
-    defaults.synchronize()
+run("R3 released; spin 2 s, removeKeys, spin 2 s, delete", retain: false) { suite in
+    spin(2)
+    removeKeys(suite)
+    spin(2)
     deleteFile(suite)
 }
-run("P4 write, removePersistentDomain only (old tests)") { suite, defaults in
-    writeKeys(defaults)
-    defaults.removePersistentDomain(forName: suite)
+run("R4 retained; spin 2 s, removeKeys, spin 2 s, delete", retain: true) { suite in
+    spin(2)
+    removeKeys(suite)
+    spin(2)
+    deleteFile(suite)
 }
-run("P5 write, removeObject per key, sync (no delete)") { suite, defaults in
-    writeKeys(defaults)
-    removeKeys(suite, defaults)
+run("R5 released; removeDomain, spin 2 s, delete", retain: false) { suite in
+    removeDomain(suite)
+    spin(2)
+    deleteFile(suite)
 }
-run("P6 write only") { _, defaults in
-    writeKeys(defaults)
+run("R6 released; removeDomain, delete", retain: false) { suite in
+    removeDomain(suite)
+    deleteFile(suite)
+}
+run("R7 released; absolute-path suite, removeKeys, delete",
+    suite: "\(scratch)/CopyClipLiteProbe-\(UUID().uuidString)", retain: false) { suite in
+    print("R7 before cleanup: \(fileState(suite))")
+    removeKeys(suite)
+    deleteFile(suite)
+}
+run("R8 released; defaults delete <suite> after removeKeys", retain: false) { suite in
+    removeKeys(suite)
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: "/usr/bin/defaults")
+    process.arguments = ["delete", suite]
+    try? process.run()
+    process.waitUntilExit()
+    deleteFile(suite)
 }
 try! records.joined(separator: "\n").write(to: listURL, atomically: true, encoding: .utf8)

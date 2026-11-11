@@ -30,6 +30,8 @@ jobs:
       - name: Snapshot state before tests
         run: ./script/check_test_leftovers.sh snapshot "$RUNNER_TEMP/test-leftovers"
       - name: Run tests
+        env:
+          COPYCLIP_DEFAULTS_DIAGNOSTICS_FILE: ${{ runner.temp }}/defaults-diagnostics.txt
         run: ./script/check_coverage.sh
       - name: Fail on files left by tests
         if: always()
@@ -40,9 +42,23 @@ jobs:
         if: always()
         continue-on-error: true
         run: |
-          swift script/tests/defaults_probe.swift write "$RUNNER_TEMP/defaults-probe.txt"
+          swift script/tests/defaults_probe.swift write "$RUNNER_TEMP/defaults-probe.txt" "$RUNNER_TEMP"
           sleep 5
           swift script/tests/defaults_probe.swift check "$RUNNER_TEMP/defaults-probe.txt"
+          diagnostics="$RUNNER_TEMP/defaults-diagnostics.txt"
+          echo "== Suites by instance state at teardown (all / left behind):"
+          cut -f2 "$diagnostics" | sort | uniq -c
+          while IFS=$'\t' read -r suite state test; do
+            if [[ -e "$HOME/Library/Preferences/$suite.plist" ]]; then
+              echo "LEFT $state $test"
+            fi
+          done <"$diagnostics" | sort | uniq -c | sort -rn | head -60
+          echo "== Clean suites by test (first 40):"
+          while IFS=$'\t' read -r suite state test; do
+            if [[ ! -e "$HOME/Library/Preferences/$suite.plist" ]]; then
+              echo "CLEAN $state $test"
+            fi
+          done <"$diagnostics" | sort | uniq -c | sort -rn | head -40
       - name: Enforce strict concurrency warnings
         run: swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
       - name: Build local release artifact
