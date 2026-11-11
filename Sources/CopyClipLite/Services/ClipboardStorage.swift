@@ -310,11 +310,13 @@ struct ClipboardStorage: @unchecked Sendable {
     /// A lower bound on the item's size in the exported JSON: binary fields are written
     /// as base64, which is 4/3 of their raw size.
     private static func minimumEncodedByteCount(of item: ClipboardItem) -> Int {
-        let binaryByteCount = (item.image?.data?.count ?? 0)
-            + (item.image?.thumbnailData?.count ?? 0)
-            + (item.rtfData?.count ?? 0)
-            + (item.htmlData?.count ?? 0)
-        return (binaryByteCount + 2) / 3 * 4 + item.text.utf8.count
+        let imageByteCount: Int = item.image?.data?.count ?? 0
+        let thumbnailByteCount: Int = item.image?.thumbnailData?.count ?? 0
+        let rtfByteCount: Int = item.rtfData?.count ?? 0
+        let htmlByteCount: Int = item.htmlData?.count ?? 0
+        let binaryByteCount: Int = imageByteCount + thumbnailByteCount + rtfByteCount + htmlByteCount
+        let base64ByteCount: Int = (binaryByteCount + 2) / 3 * 4
+        return base64ByteCount + item.text.utf8.count
     }
 
     private static func exportTooLargeReason(minimumByteCount: Int) -> String {
