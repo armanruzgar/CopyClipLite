@@ -101,16 +101,6 @@ extension ClipboardStoreTests {
         )
     }
 
-    private func waitUntil(
-        _ description: String,
-        _ condition: () -> Bool
-    ) async throws {
-        for _ in 0..<300 where !condition() {
-            try await Task.sleep(nanoseconds: 10_000_000)
-        }
-        XCTAssertTrue(condition(), "Timed out waiting for \(description)")
-    }
-
     private func waitForBackgroundSignal(_ semaphore: DispatchSemaphore) {
         XCTAssertEqual(semaphore.wait(timeout: .now() + 5), .success)
     }
@@ -120,10 +110,10 @@ extension ClipboardStoreTests {
         _ text: String,
         in store: ClipboardStore,
         pasteboard: ThreadSafeCapturePasteboard
-    ) async throws {
+    ) async {
         pasteboard.replaceContents(with: text)
         store.pollPasteboardForChanges()
-        try await waitUntil(text) { store.items.contains { $0.text == text } }
+        await waitForState(of: store, text) { store.items.contains { $0.text == text } }
     }
 
     func testBackgroundCaptureIsRecordedAfterTheHopToTheMainActor() async throws {
@@ -135,7 +125,7 @@ extension ClipboardStoreTests {
         store.pollPasteboardForChanges()
 
         XCTAssertTrue(store.items.isEmpty)
-        try await waitUntil("background capture") { !store.items.isEmpty }
+        await waitForState(of: store, "background capture") { !store.items.isEmpty }
         XCTAssertEqual(store.items.map(\.text), ["background text"])
     }
 
@@ -155,7 +145,7 @@ extension ClipboardStoreTests {
 
         // Delivered after the stale read, so the stale snapshot would show up first.
         store.pollPasteboardForChanges()
-        try await waitUntil("newer value") { !store.items.isEmpty }
+        await waitForState(of: store, "newer value") { !store.items.isEmpty }
         XCTAssertEqual(store.items.map(\.text), ["newer value"])
         XCTAssertEqual(store.items.first?.copyCount, 1)
     }
@@ -172,7 +162,7 @@ extension ClipboardStoreTests {
         store.pauseMonitoring(for: .fiveMinutes)
         release.signal()
         store.setMonitoringEnabled(true)
-        try await captureSentinel("after resume", in: store, pasteboard: pasteboard)
+        await captureSentinel("after resume", in: store, pasteboard: pasteboard)
 
         XCTAssertEqual(store.items.map(\.text), ["after resume"])
     }
@@ -192,7 +182,7 @@ extension ClipboardStoreTests {
         waitForBackgroundSignal(pasteboard.backgroundReadStarted)
         store.addIgnoredApplication(secretApplication)
         release.signal()
-        try await captureSentinel("public value", in: store, pasteboard: pasteboard)
+        await captureSentinel("public value", in: store, pasteboard: pasteboard)
 
         XCTAssertEqual(store.items.map(\.text), ["public value"])
     }
@@ -212,7 +202,7 @@ extension ClipboardStoreTests {
         store.pollPasteboardForChanges()
         XCTAssertTrue(store.items.isEmpty)
 
-        try await waitUntil("both captures") { store.items.count == 2 }
+        await waitForState(of: store, "both captures") { store.items.count == 2 }
         XCTAssertEqual(store.items.map(\.text), ["second", "first"])
         XCTAssertGreaterThanOrEqual(store.items[0].lastCopiedAt, store.items[1].lastCopiedAt)
     }
@@ -239,12 +229,12 @@ extension ClipboardStoreTests {
         let pasteboard = ThreadSafeCapturePasteboard()
         let store = try makeBackgroundCaptureStore(pasteboard: pasteboard)
         defer { store.setMonitoringEnabled(false) }
-        try await captureSentinel("chosen", in: store, pasteboard: pasteboard)
+        await captureSentinel("chosen", in: store, pasteboard: pasteboard)
         let chosen = try XCTUnwrap(store.items.first)
 
         finishBackgroundReadWithoutDelivering("external", in: store, pasteboard: pasteboard)
         XCTAssertTrue(store.copy(chosen))
-        try await waitUntil("late capture") { store.items.count == 2 }
+        await waitForState(of: store, "late capture") { store.items.count == 2 }
 
         XCTAssertEqual(store.items.map(\.text), ["chosen", "external"])
         XCTAssertEqual(store.items.map(\.copyCount), [2, 1])
@@ -255,12 +245,12 @@ extension ClipboardStoreTests {
         let pasteboard = ThreadSafeCapturePasteboard()
         let store = try makeBackgroundCaptureStore(pasteboard: pasteboard)
         defer { store.setMonitoringEnabled(false) }
-        try await captureSentinel("chosen", in: store, pasteboard: pasteboard)
+        await captureSentinel("chosen", in: store, pasteboard: pasteboard)
         let chosen = try XCTUnwrap(store.items.first)
 
         finishBackgroundReadWithoutDelivering("external", in: store, pasteboard: pasteboard)
         store.copyWithTransformation(chosen, transformation: .uppercase)
-        try await waitUntil("late capture") { store.items.count == 3 }
+        await waitForState(of: store, "late capture") { store.items.count == 3 }
 
         XCTAssertEqual(store.items.map(\.text), ["CHOSEN", "external", "chosen"])
         XCTAssertEqual(store.items.map(\.copyCount), [1, 1, 1])
@@ -271,14 +261,14 @@ extension ClipboardStoreTests {
         let pasteboard = ThreadSafeCapturePasteboard()
         let store = try makeBackgroundCaptureStore(pasteboard: pasteboard)
         defer { store.setMonitoringEnabled(false) }
-        try await captureSentinel("chosen", in: store, pasteboard: pasteboard)
+        await captureSentinel("chosen", in: store, pasteboard: pasteboard)
         let chosen = try XCTUnwrap(store.items.first)
 
         finishBackgroundReadWithoutDelivering("external", in: store, pasteboard: pasteboard)
         XCTAssertTrue(store.copy(chosen))
-        try await waitUntil("late capture") { store.items.count == 2 }
+        await waitForState(of: store, "late capture") { store.items.count == 2 }
         store.pollPasteboardForChanges()
-        try await captureSentinel("sentinel", in: store, pasteboard: pasteboard)
+        await captureSentinel("sentinel", in: store, pasteboard: pasteboard)
 
         XCTAssertEqual(store.items.map(\.text), ["sentinel", "chosen", "external"])
         XCTAssertEqual(store.items.map(\.copyCount), [1, 2, 1])
@@ -340,7 +330,7 @@ extension ClipboardStoreTests {
         waitForBackgroundSignal(pasteboard.backgroundReadStarted)
         XCTAssertTrue(store.clearUnpinnedHistoryOnQuitIfNeeded())
         release.signal()
-        try await captureSentinel("sentinel", in: store, pasteboard: pasteboard)
+        await captureSentinel("sentinel", in: store, pasteboard: pasteboard)
 
         XCTAssertEqual(store.items.map(\.text), ["sentinel"])
     }
@@ -349,7 +339,7 @@ extension ClipboardStoreTests {
         let pasteboard = ThreadSafeCapturePasteboard()
         let store = try makeBackgroundCaptureStore(pasteboard: pasteboard)
         defer { store.setMonitoringEnabled(false) }
-        try await captureSentinel("deleted value", in: store, pasteboard: pasteboard)
+        await captureSentinel("deleted value", in: store, pasteboard: pasteboard)
         let deletedItem = try XCTUnwrap(store.items.first)
         pasteboard.replaceContents(with: "deleted value")
         let release = pasteboard.armGate()
@@ -359,7 +349,7 @@ extension ClipboardStoreTests {
         let deleted = await store.delete(deletedItem)
         XCTAssertTrue(deleted)
         release.signal()
-        try await captureSentinel("sentinel", in: store, pasteboard: pasteboard)
+        await captureSentinel("sentinel", in: store, pasteboard: pasteboard)
 
         XCTAssertEqual(store.items.map(\.text), ["sentinel"])
     }
@@ -388,7 +378,7 @@ extension ClipboardStoreTests {
         XCTAssertFalse(isPNG)
 
         store.pollPasteboardForChanges()
-        try await waitUntil("image capture") { !store.items.isEmpty }
+        await waitForState(of: store, "image capture") { !store.items.isEmpty }
 
         let item = try XCTUnwrap(store.items.first)
         XCTAssertEqual(item.contentKind, .image)
