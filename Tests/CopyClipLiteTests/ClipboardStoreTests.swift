@@ -352,14 +352,8 @@ final class StubStorePasteboard: ClipboardStorePasteboard {
 @MainActor
 final class ClipboardStoreTests: XCTestCase {
     var tempDirectories: [URL] = []
-    var defaultsSuites: [String] = []
 
     override func tearDownWithError() throws {
-        for suiteName in defaultsSuites {
-            UserDefaults.standard.removePersistentDomain(forName: suiteName)
-        }
-        defaultsSuites.removeAll()
-
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
@@ -373,14 +367,6 @@ final class ClipboardStoreTests: XCTestCase {
             .appendingPathComponent("CopyClipLiteTests-\(UUID().uuidString)", isDirectory: true)
         tempDirectories.append(directory)
         return directory
-    }
-
-    func makeDefaults() -> UserDefaults {
-        let suiteName = "CopyClipLiteTests-\(UUID().uuidString)"
-        defaultsSuites.append(suiteName)
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        return defaults
     }
 
     func makePasteboard() -> StubStorePasteboard {
@@ -532,7 +518,7 @@ final class ClipboardStoreTests: XCTestCase {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             persistenceQueue: persistenceQueue,
             scheduleDelayedSave: { delayedSaves.append($0) }
@@ -598,7 +584,7 @@ final class ClipboardStoreTests: XCTestCase {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
 
@@ -610,7 +596,7 @@ final class ClipboardStoreTests: XCTestCase {
         let reloadedStore = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             pasteboardWriter: writer
         )

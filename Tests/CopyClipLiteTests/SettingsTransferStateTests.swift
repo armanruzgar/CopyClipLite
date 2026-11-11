@@ -30,14 +30,8 @@ private final class DataRepresentationCompletionBox: @unchecked Sendable {
 @MainActor
 final class SettingsTransferStateTests: XCTestCase {
     private var temporaryDirectories: [URL] = []
-    private var defaultsSuites: [String] = []
 
     override func tearDownWithError() throws {
-        for suiteName in defaultsSuites {
-            UserDefaults.standard.removePersistentDomain(forName: suiteName)
-        }
-        defaultsSuites.removeAll()
-
         for directory in temporaryDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
@@ -354,14 +348,10 @@ final class SettingsTransferStateTests: XCTestCase {
             faultInjector: faultInjector
         )
         storage.save(items)
-        let suiteName = "CopyClipLite.SettingsTransferStateTests.\(UUID().uuidString)"
-        defaultsSuites.append(suiteName)
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
         return ClipboardStore(
             pasteboard: StubStorePasteboard(),
             storage: storage,
-            defaults: defaults,
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
     }

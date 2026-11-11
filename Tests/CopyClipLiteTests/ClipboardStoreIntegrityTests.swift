@@ -38,7 +38,7 @@ extension ClipboardStoreTests {
             let board = makePasteboard()
             let processor = GatedFirstImageProcessor()
             let store = ClipboardStore(
-                pasteboard: board, storage: storage, defaults: makeDefaults(),
+                pasteboard: board, storage: storage, defaults: makeIsolatedDefaults(),
                 sourceApplicationProvider: { nil }, imageProcessor: processor
             )
             defer { store.setMonitoringEnabled(false) }
@@ -86,7 +86,7 @@ extension ClipboardStoreTests {
             let other = ClipboardSourceApplication(bundleIdentifier: "test.other", name: "Other")
             var source = excluded
             let store = ClipboardStore(
-                pasteboard: board, storage: storage, defaults: makeDefaults(),
+                pasteboard: board, storage: storage, defaults: makeIsolatedDefaults(),
                 sourceApplicationProvider: { source }, imageProcessor: processor
             )
             defer { store.setMonitoringEnabled(false) }
@@ -136,7 +136,7 @@ extension ClipboardStoreTests {
         ])
         try storage.backup(items, reason: "pre-import")
         let store = ClipboardStore(
-            pasteboard: makePasteboard(), storage: storage, defaults: makeDefaults(),
+            pasteboard: makePasteboard(), storage: storage, defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         let sidecar = storage.imageDirectoryURL.appendingPathComponent(try XCTUnwrap(items[0].image?.fileName))
@@ -174,7 +174,7 @@ extension ClipboardStoreTests {
         )
         let oldItems = try storage.saveValidated([ClipboardItem(image: payload)])
         let store = ClipboardStore(
-            pasteboard: makePasteboard(), storage: storage, defaults: makeDefaults(),
+            pasteboard: makePasteboard(), storage: storage, defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         let sidecar = storage.imageDirectoryURL.appendingPathComponent(try XCTUnwrap(oldItems[0].image?.fileName))
@@ -204,7 +204,7 @@ extension ClipboardStoreTests {
         let pinned = ClipboardItem(text: "keep pinned", isPinned: true)
         let items = try storage.saveValidated([ClipboardItem(image: payload), pinned])
         try storage.backup(items, reason: "pre-import")
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         let store = ClipboardStore(
             pasteboard: makePasteboard(), storage: storage, defaults: defaults,
@@ -227,7 +227,7 @@ extension ClipboardStoreTests {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
         try storage.saveValidated([ClipboardItem(text: "text")])
         let store = ClipboardStore(
-            pasteboard: makePasteboard(), storage: storage, defaults: makeDefaults(),
+            pasteboard: makePasteboard(), storage: storage, defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         try FileManager.default.removeItem(at: storage.imageDirectoryURL)
@@ -269,7 +269,7 @@ extension ClipboardStoreTests {
             let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
             try storage.saveValidated([first, second])
             let store = ClipboardStore(
-                pasteboard: makePasteboard(), storage: storage, defaults: makeDefaults(),
+                pasteboard: makePasteboard(), storage: storage, defaults: makeIsolatedDefaults(),
                 sourceApplicationProvider: { nil }
             )
             let artifact = try await store.prepareImport(
@@ -295,7 +295,7 @@ extension ClipboardStoreTests {
         let item = ClipboardItem(text: "legacy invalid date", createdAt: date, lastCopiedAt: date, isPinned: true)
         try storage.saveValidated([item])
         let store = ClipboardStore(
-            pasteboard: makePasteboard(), storage: storage, defaults: makeDefaults(),
+            pasteboard: makePasteboard(), storage: storage, defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         XCTAssertEqual(store.items.count, 1)

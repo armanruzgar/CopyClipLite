@@ -154,9 +154,7 @@ final class GlobalHotkeyControllerTests: XCTestCase {
     }
 
     func testInvalidPersistedShortcutFallsBackToDefault() throws {
-        let suiteName = "GlobalHotkeyControllerTests-\(UUID().uuidString)"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let defaults = makeIsolatedDefaults()
         let invalid = HotkeyConfig(keyCode: -1, modifiers: cmdKey)
         defaults.set(try JSONEncoder().encode(invalid), forKey: HotkeyConfig.DefaultsKey.hotkeyConfig)
 

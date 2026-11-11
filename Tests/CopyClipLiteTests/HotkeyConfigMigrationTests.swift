@@ -4,17 +4,14 @@ import XCTest
 @testable import CopyClipLite
 
 final class HotkeyConfigMigrationTests: XCTestCase {
-    private var suiteName = ""
     private var defaults: UserDefaults!
 
     override func setUpWithError() throws {
         try super.setUpWithError()
-        suiteName = "HotkeyConfigMigrationTests-\(UUID().uuidString)"
-        defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defaults = makeIsolatedDefaults()
     }
 
     override func tearDown() {
-        defaults.removePersistentDomain(forName: suiteName)
         defaults = nil
         super.tearDown()
     }

@@ -19,7 +19,7 @@ extension ClipboardStoreTests {
             let store = ClipboardStore(
                 pasteboard: pasteboard,
                 storage: storage,
-                defaults: makeDefaults(),
+                defaults: makeIsolatedDefaults(),
                 sourceApplicationProvider: { nil }
             )
             defer { store.setMonitoringEnabled(false) }
@@ -83,7 +83,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         defer { store.setMonitoringEnabled(false) }

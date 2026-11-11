@@ -96,12 +96,8 @@ private final class PasteObservationState {
 @MainActor
 final class PasteTargetControllerTests: XCTestCase {
     nonisolated(unsafe) private var tempDirectories: [URL] = []
-    nonisolated(unsafe) private var defaultsSuites: [String] = []
 
     override func tearDownWithError() throws {
-        for suiteName in defaultsSuites {
-            UserDefaults.standard.removePersistentDomain(forName: suiteName)
-        }
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
@@ -483,14 +479,10 @@ final class PasteTargetControllerTests: XCTestCase {
         tempDirectories.append(directory)
         let storage = ClipboardStorage(appDirectory: directory)
         storage.save([ClipboardItem(text: "paste me")])
-        let suiteName = "PasteTargetControllerTests-\(UUID().uuidString)"
-        defaultsSuites.append(suiteName)
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: defaults,
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         return (store, try XCTUnwrap(store.items.first))

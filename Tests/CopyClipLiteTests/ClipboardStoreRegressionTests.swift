@@ -15,7 +15,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         defer { store.setMonitoringEnabled(false) }
@@ -55,7 +55,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         defer { store.setMonitoringEnabled(false) }
@@ -76,7 +76,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             imageProcessor: processor
         )
@@ -111,7 +111,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         defer { store.setMonitoringEnabled(false) }
@@ -134,7 +134,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             imageProcessor: processor,
             clock: ClipboardStoreClock(now: { now }, sleep: { _ in })
@@ -168,7 +168,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         defer { store.setMonitoringEnabled(false) }
@@ -237,7 +237,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             thumbnailLoader: { item in
                 loaderGate.wait()
@@ -284,7 +284,7 @@ extension ClipboardStoreTests {
 
     func testInterruptedQuitCleanupIsCompletedAtLaunch() throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         defaults.set(true, forKey: "quitCleanupPending")
         storage.save([
@@ -310,7 +310,7 @@ extension ClipboardStoreTests {
 
     func testLaunchKeepsHistoryWhenPreviousQuitCleanupCompleted() throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         storage.save([ClipboardItem(text: "pinned", isPinned: true), ClipboardItem(text: "unpinned")])
 
@@ -329,7 +329,7 @@ extension ClipboardStoreTests {
     }
 
     func testTogglingClearOnQuitSetsAndClearsPendingMarker() throws {
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
@@ -348,7 +348,7 @@ extension ClipboardStoreTests {
 
     func testFailedQuitCleanupKeepsPendingMarker() throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         storage.save([ClipboardItem(text: "pinned", isPinned: true), ClipboardItem(text: "unpinned")])
         _ = try storage.backup(storage.load(), reason: "pre-import")
@@ -385,7 +385,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             pasteboardWriter: StubPasteboardWriter(result: .success),
             clock: ClipboardStoreClock(now: { now }, sleep: { _ in })

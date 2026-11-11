@@ -17,7 +17,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { sourceApplication }
         )
 
@@ -40,7 +40,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { sourceApplication }
         )
         store.addIgnoredApplication(sourceApplication)
@@ -64,7 +64,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
 
         XCTAssertEqual(
@@ -84,7 +84,7 @@ extension ClipboardStoreTests {
             let store = ClipboardStore(
                 pasteboard: pasteboard,
                 storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-                defaults: makeDefaults(),
+                defaults: makeIsolatedDefaults(),
                 sourceApplicationProvider: { nil }
             )
             if pause {
@@ -109,7 +109,7 @@ extension ClipboardStoreTests {
     func testExpiredTimedPauseResumesMonitoringAfterRelaunch() throws {
         let base = Date(timeIntervalSinceReferenceDate: 20_000)
         let clock = ManualClipboardClock(now: base)
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(false, forKey: "monitoringEnabled")
         defaults.set(base.addingTimeInterval(-60), forKey: "monitoringPausedUntil")
 
@@ -132,7 +132,7 @@ extension ClipboardStoreTests {
     func testFutureTimedPauseRelaunchResumesExactlyAtInjectedDeadline() async throws {
         let base = Date(timeIntervalSinceReferenceDate: 10_000)
         let clock = ManualClipboardClock(now: base)
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(false, forKey: "monitoringEnabled")
         defaults.set(base.addingTimeInterval(60), forKey: "monitoringPausedUntil")
         let store = ClipboardStore(
@@ -166,7 +166,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             clock: ClipboardStoreClock(
                 now: { clock.now() },
@@ -192,7 +192,7 @@ extension ClipboardStoreTests {
         let clock = ManualClipboardClock(
             now: Date(timeIntervalSinceReferenceDate: 30_000)
         )
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(false, forKey: "monitoringEnabled")
 
         let store = ClipboardStore(
@@ -211,7 +211,7 @@ extension ClipboardStoreTests {
 
     func testClearUnpinnedOnQuitKeepsPinnedItems() throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
 
         let pinned = ClipboardItem(text: "pinned", isPinned: true)
@@ -232,7 +232,7 @@ extension ClipboardStoreTests {
 
     func testQuitBackupPurgeFailureKeepsCompletedHistoryCleanup() throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         storage.save([
             ClipboardItem(text: "pinned", isPinned: true),
@@ -257,7 +257,7 @@ extension ClipboardStoreTests {
     func testClearUnpinnedOnQuitKeepsLiveCapturedPinnedImageFilesReadable() async throws {
         let pasteboard = makePasteboard()
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         defaults.set(false, forKey: "keepPinnedOnClear")
         let store = ClipboardStore(
@@ -285,7 +285,7 @@ extension ClipboardStoreTests {
         let reloadedStore = ClipboardStore(
             pasteboard: reloadedPasteboard,
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         let reloadedStoreImage = try XCTUnwrap(reloadedStore.items.first)
@@ -296,7 +296,7 @@ extension ClipboardStoreTests {
 
     func testStaticClearOnQuitAlwaysKeepsPinnedItems() throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         defaults.set(false, forKey: "keepPinnedOnClear")
 
@@ -314,7 +314,7 @@ extension ClipboardStoreTests {
 
     func testStaticQuitPurgeFailureKeepsCompletedHistoryCleanup() throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         storage.save([
             ClipboardItem(text: "pinned", isPinned: true),

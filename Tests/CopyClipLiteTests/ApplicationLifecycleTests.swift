@@ -4,14 +4,8 @@ import XCTest
 @MainActor
 final class ApplicationLifecycleTests: XCTestCase {
     private var tempDirectories: [URL] = []
-    private var defaultsSuites: [String] = []
 
     override func tearDownWithError() throws {
-        for suiteName in defaultsSuites {
-            UserDefaults.standard.removePersistentDomain(forName: suiteName)
-        }
-        defaultsSuites.removeAll()
-
         for directory in tempDirectories {
             try? FileManager.default.removeItem(at: directory)
         }
@@ -43,7 +37,7 @@ final class ApplicationLifecycleTests: XCTestCase {
 
     func testResigningActiveFlushesPendingStoreMutation() async throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(false, forKey: "monitoringEnabled")
         storage.save([ClipboardItem(text: "pending deletion")])
         let store = ClipboardStore(
@@ -68,7 +62,7 @@ final class ApplicationLifecycleTests: XCTestCase {
 
     func testTerminatingKeepsPinnedItemsAndRemovesUnpinnedHistory() throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(false, forKey: "monitoringEnabled")
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         storage.save([
@@ -95,7 +89,7 @@ final class ApplicationLifecycleTests: XCTestCase {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
 
@@ -122,14 +116,6 @@ final class ApplicationLifecycleTests: XCTestCase {
             .appendingPathComponent("CopyClipLiteLifecycleTests-\(UUID().uuidString)", isDirectory: true)
         tempDirectories.append(directory)
         return directory
-    }
-
-    private func makeDefaults() -> UserDefaults {
-        let suiteName = "CopyClipLiteLifecycleTests-\(UUID().uuidString)"
-        defaultsSuites.append(suiteName)
-        let defaults = UserDefaults(suiteName: suiteName)!
-        defaults.removePersistentDomain(forName: suiteName)
-        return defaults
     }
 
     private func makePasteboard() -> StubStorePasteboard {

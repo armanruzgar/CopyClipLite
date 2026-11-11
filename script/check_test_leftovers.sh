@@ -4,7 +4,7 @@
 #   check_test_leftovers.sh snapshot <dir>   capture state before the tests
 #   check_test_leftovers.sh report <dir>     print what changed after the tests
 #
-# Set COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS=1 to fail when test preference files remain.
+# Set COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS=1 to fail when test preference files exist.
 set -euo pipefail
 
 MODE="${1:?usage: check_test_leftovers.sh snapshot|report <dir>}"
@@ -52,22 +52,27 @@ case "$MODE" in
     status=0
 
     list_preferences >"$STATE_DIR/preferences-after.txt"
-    comm -13 "$STATE_DIR/preferences.txt" "$STATE_DIR/preferences-after.txt" \
-      | { grep -E "$test_preference_pattern" || true; } \
+    # The runner starts without test preference files, so any present now came from this run.
+    { grep -E "$test_preference_pattern" "$STATE_DIR/preferences-after.txt" || true; } \
       | { grep -Ev "$installed_app_preferences" || true; } >"$STATE_DIR/preference-leftovers.txt"
     leftover_count="$(wc -l <"$STATE_DIR/preference-leftovers.txt" | tr -d ' ')"
-    echo "== Test preference files left in $PREFERENCES_DIR: $leftover_count"
+    echo "== Test preference files in $PREFERENCES_DIR: $leftover_count"
     if [[ "$leftover_count" -gt 0 ]]; then
       echo "-- by prefix:"
       sed -E 's/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\.plist$/<UUID>.plist/' \
         "$STATE_DIR/preference-leftovers.txt" | sort | uniq -c | sort -rn
+      empty_count=0
       echo "-- non-empty files:"
       while IFS= read -r name; do
-        contents="$(plutil -convert json -o - "$PREFERENCES_DIR/$name" 2>/dev/null || echo '?')"
-        if [[ "$contents" != "{}" ]]; then
-          echo "$name: $contents"
+        key_count="$(plutil -convert xml1 -o - "$PREFERENCES_DIR/$name" 2>/dev/null | grep -c '<key>' || true)"
+        if [[ "$key_count" == "0" ]]; then
+          empty_count=$((empty_count + 1))
+        else
+          echo "$name:"
+          plutil -p "$PREFERENCES_DIR/$name" 2>&1 | sed 's/^/    /'
         fi
       done <"$STATE_DIR/preference-leftovers.txt"
+      echo "-- empty files: $empty_count"
       echo "-- files:"
       cat "$STATE_DIR/preference-leftovers.txt"
       if [[ "${COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS:-0}" == "1" ]]; then
@@ -75,14 +80,25 @@ case "$MODE" in
         status=1
       fi
     fi
-    echo "-- all new preference files (any name):"
-    comm -13 "$STATE_DIR/preferences.txt" "$STATE_DIR/preferences-after.txt" | sed 's/^/  /'
+    echo "== Other new preference files:"
+    comm -13 "$STATE_DIR/preferences.txt" "$STATE_DIR/preferences-after.txt" \
+      | { grep -Ev "$test_preference_pattern" || true; } >"$STATE_DIR/other-preferences.txt"
+    while IFS= read -r name; do
+      echo "  $name:"
+      plutil -p "$PREFERENCES_DIR/$name" 2>&1 | head -40 | sed 's/^/      /'
+    done <"$STATE_DIR/other-preferences.txt"
 
     list_temp >"$STATE_DIR/temp-after.txt"
     comm -13 "$STATE_DIR/temp.txt" "$STATE_DIR/temp-after.txt" >"$STATE_DIR/temp-new.txt"
     echo "== New entries in $TEMP_DIR: $(wc -l <"$STATE_DIR/temp-new.txt" | tr -d ' ')"
     sed -E 's/[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}/<UUID>/g' \
       "$STATE_DIR/temp-new.txt" | sort | uniq -c | sort -rn | sed 's/^/  /'
+    echo "-- contents of new temp entries:"
+    while IFS= read -r name; do
+      entry="${TEMP_DIR%/}/$name"
+      echo "  $name ($(stat -f '%Sm' "$entry" 2>/dev/null || echo '?')):"
+      find "$entry" -mindepth 1 -maxdepth 2 2>/dev/null | head -8 | sed "s|^${TEMP_DIR%/}/||; s/^/      /"
+    done <"$STATE_DIR/temp-new.txt"
 
     list_app_support >"$STATE_DIR/app-support-after.txt"
     echo "== Changes under $APP_SUPPORT_DIR:"

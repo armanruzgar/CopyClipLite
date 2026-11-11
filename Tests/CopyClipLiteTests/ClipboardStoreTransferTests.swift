@@ -11,7 +11,7 @@ extension ClipboardStoreTests {
     func testPersistedHistoryLimitIsClampedBeforeStartupPruning() throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
         storage.save((0..<12).map { ClipboardItem(text: "clip-\($0)") })
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(0, forKey: "historyLimit")
 
         let store = ClipboardStore(
@@ -26,7 +26,7 @@ extension ClipboardStoreTests {
     }
 
     func testPauseMonitoringPersistsResumeDate() throws {
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
@@ -73,7 +73,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
 
@@ -118,7 +118,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: directory.appendingPathComponent("Store")),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         let image = ClipboardImagePayload(data: try makePNGData(width: 2, height: 2), width: 2, height: 2)
@@ -173,7 +173,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
 
@@ -234,7 +234,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: ClipboardStorage(appDirectory: directory.appendingPathComponent("Store")),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
 
@@ -310,7 +310,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         store.setHistoryLimit(10)
@@ -336,7 +336,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
         let artifact = try await store.prepareImport(from: importURL)
 
@@ -366,7 +366,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         let artifact = try await store.prepareImport(from: importURL)
@@ -413,7 +413,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
         let imageItem = try XCTUnwrap(store.items.first(where: { $0.isImage }))
         faultSwitch.failManifestWrite = true

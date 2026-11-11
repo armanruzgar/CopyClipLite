@@ -22,7 +22,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
 
         XCTAssertEqual(Set(store.items.map(\.text)), ["pinned", "recent"])
@@ -44,7 +44,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
 
         store.setHistoryLimit(10)
@@ -69,7 +69,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
         let originalItems = store.items
 
@@ -93,7 +93,7 @@ extension ClipboardStoreTests {
             ),
             ClipboardItem(text: "recent", createdAt: now, lastCopiedAt: now),
         ])
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(ClipboardRetentionPolicy.never.rawValue, forKey: "retentionPolicy")
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
@@ -130,7 +130,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
         store.setHistoryLimit(10)
 
@@ -151,7 +151,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             pasteboardWriter: writer
         )
         let item = try XCTUnwrap(store.items.first)
@@ -172,7 +172,7 @@ extension ClipboardStoreTests {
             let store = ClipboardStore(
                 pasteboard: makePasteboard(),
                 storage: storage,
-                defaults: makeDefaults(),
+                defaults: makeIsolatedDefaults(),
                 pasteboardWriter: writer
             )
             let item = try XCTUnwrap(store.items.first)
@@ -195,7 +195,7 @@ extension ClipboardStoreTests {
             let store = ClipboardStore(
                 pasteboard: makePasteboard(),
                 storage: storage,
-                defaults: makeDefaults(),
+                defaults: makeIsolatedDefaults(),
                 pasteboardWriter: writer
             )
             let itemsBeforeCopy = store.items
@@ -235,7 +235,7 @@ extension ClipboardStoreTests {
             let store = ClipboardStore(
                 pasteboard: makePasteboard(),
                 storage: storage,
-                defaults: makeDefaults(),
+                defaults: makeIsolatedDefaults(),
                 pasteboardWriter: writer
             )
             let item = try XCTUnwrap(store.items.first)
@@ -265,7 +265,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             pasteboardWriter: writer
         )
 
@@ -288,7 +288,7 @@ extension ClipboardStoreTests {
 
     func testManualClearRemovesPinnedAndUnpinnedItemsWhenRetentionIsDisabled() async throws {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(false, forKey: "keepPinnedOnClear")
         storage.save([
             ClipboardItem(text: "pinned", isPinned: true),
@@ -314,7 +314,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         XCTAssertEqual(store.backupInventory.count, 1)
@@ -333,7 +333,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         XCTAssertEqual(store.backupLocation, storage.fileURL.deletingLastPathComponent())
@@ -349,7 +349,7 @@ extension ClipboardStoreTests {
         let storage = ClipboardStorage(appDirectory: try makeTemporaryDirectory())
         storage.save([ClipboardItem(text: "clear me")])
         _ = try storage.backup(storage.load(), reason: "pre-import")
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(false, forKey: "keepPinnedOnClear")
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
@@ -379,7 +379,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
         store.setHistoryLimit(10)
 
@@ -401,7 +401,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
 
@@ -429,7 +429,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             pasteboardWriter: writer
         )
         let item = try XCTUnwrap(store.items.first)
@@ -461,7 +461,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
 
         pasteboard.clearContents()
@@ -485,7 +485,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         let selectedIDs: Set<ClipboardItem.ID> = [first.id, second.id]
@@ -514,7 +514,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: repository,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         repository.blockNextSave()

@@ -31,9 +31,15 @@ jobs:
         run: ./script/check_test_leftovers.sh snapshot "$RUNNER_TEMP/test-leftovers"
       - name: Run tests
         run: ./script/check_coverage.sh
-      - name: Report files left by tests
+      - name: Fail on files left by tests
         if: always()
+        env:
+          COPYCLIP_ENFORCE_NO_TEST_LEFTOVERS: "1"
         run: ./script/check_test_leftovers.sh report "$RUNNER_TEMP/test-leftovers"
+      - name: Probe cfprefsd cleanup behaviour (temporary)
+        if: always()
+        continue-on-error: true
+        run: swift script/tests/defaults_probe.swift
       - name: Enforce strict concurrency warnings
         run: swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
       - name: Build local release artifact

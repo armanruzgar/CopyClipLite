@@ -5,18 +5,8 @@ import XCTest
 
 @MainActor
 final class ClipboardIgnoredApplicationStoreTests: XCTestCase {
-    private var suiteNames: [String] = []
-
-    override func tearDownWithError() throws {
-        for suiteName in suiteNames {
-            UserDefaults.standard.removePersistentDomain(forName: suiteName)
-        }
-        suiteNames.removeAll()
-        try super.tearDownWithError()
-    }
-
     func testFirstRunSeedsCredentialManagersAndPasswords() throws {
-        let defaults = try makeDefaults()
+        let defaults = makeIsolatedDefaults()
         let store = ClipboardIgnoredApplicationStore(defaults: defaults)
 
         ClipboardDefaultExclusionsSeeder.seedIfNeeded(defaults: defaults, store: store)
@@ -29,7 +19,7 @@ final class ClipboardIgnoredApplicationStoreTests: XCTestCase {
     }
 
     func testRemovedDefaultIsNotRestoredAfterInitialSeed() throws {
-        let defaults = try makeDefaults()
+        let defaults = makeIsolatedDefaults()
         let store = ClipboardIgnoredApplicationStore(defaults: defaults)
         ClipboardDefaultExclusionsSeeder.seedIfNeeded(defaults: defaults, store: store)
         let removedIdentifier = "com.1password.1password"
@@ -42,7 +32,7 @@ final class ClipboardIgnoredApplicationStoreTests: XCTestCase {
     }
 
     func testSeedPreservesExistingCustomExclusion() throws {
-        let defaults = try makeDefaults()
+        let defaults = makeIsolatedDefaults()
         let store = ClipboardIgnoredApplicationStore(defaults: defaults)
         let custom = ClipboardSourceApplication(
             bundleIdentifier: "com.example.CustomSecrets",
@@ -54,13 +44,5 @@ final class ClipboardIgnoredApplicationStoreTests: XCTestCase {
 
         XCTAssertTrue(store.load().contains(custom))
         XCTAssertEqual(store.load().count, 9)
-    }
-
-    private func makeDefaults() throws -> UserDefaults {
-        let suiteName = "ClipboardIgnoredApplicationStoreTests-\(UUID().uuidString)"
-        suiteNames.append(suiteName)
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        return defaults
     }
 }

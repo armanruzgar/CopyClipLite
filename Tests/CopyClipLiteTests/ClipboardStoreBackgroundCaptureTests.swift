@@ -95,7 +95,7 @@ extension ClipboardStoreTests {
         ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: defaults ?? makeDefaults(),
+            defaults: defaults ?? makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             captureExecution: .background
         )
@@ -319,7 +319,7 @@ extension ClipboardStoreTests {
 
     func testBackgroundCaptureCompletingAfterQuitCleanupIsDiscarded() async throws {
         let pasteboard = ThreadSafeCapturePasteboard()
-        let defaults = makeDefaults()
+        let defaults = makeIsolatedDefaults()
         defaults.set(true, forKey: "clearUnpinnedOnQuit")
         let store = try makeBackgroundCaptureStore(pasteboard: pasteboard, defaults: defaults)
         defer { store.setMonitoringEnabled(false) }

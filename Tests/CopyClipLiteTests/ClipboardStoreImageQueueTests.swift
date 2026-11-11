@@ -14,7 +14,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
         let pngData = try makePNGData(width: 3, height: 3)
 
@@ -44,7 +44,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             imageProcessor: ExternalizingStressImageProcessor(
                 payloadByteCount: payloadByteCount
@@ -123,7 +123,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: makePasteboard(),
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         let item = try XCTUnwrap(store.items.first)
@@ -178,7 +178,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             thumbnailLoader: { item in
                 counter.increment()
@@ -213,7 +213,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             imageProcessor: processor
         )
 
@@ -237,7 +237,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             imageProcessor: processor
         )
@@ -274,7 +274,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             imageProcessor: processor
         )
@@ -300,7 +300,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
         let pngData = try makePNGData(width: 2, height: 2)
 
@@ -328,7 +328,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
         let pngData = try makePNGData(width: 2, height: 2)
 
@@ -361,7 +361,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: ClipboardStorage(appDirectory: try makeTemporaryDirectory()),
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil },
             imageProcessor: SequencedImageProcessor()
         )
@@ -408,7 +408,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
 
@@ -434,7 +434,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
         let pngData = try makePNGData(width: 4, height: 4)
 
@@ -459,7 +459,7 @@ extension ClipboardStoreTests {
         let reloadedStore = ClipboardStore(
             pasteboard: reloadedPasteboard,
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         let reloadedStoreImage = try XCTUnwrap(
@@ -475,7 +475,7 @@ extension ClipboardStoreTests {
         let store = ClipboardStore(
             pasteboard: pasteboard,
             storage: storage,
-            defaults: makeDefaults()
+            defaults: makeIsolatedDefaults()
         )
         let pngData = try makePNGData(width: 5, height: 5)
 
@@ -497,7 +497,7 @@ extension ClipboardStoreTests {
         let reloadedStore = ClipboardStore(
             pasteboard: reloadedPasteboard,
             storage: storage,
-            defaults: makeDefaults(),
+            defaults: makeIsolatedDefaults(),
             sourceApplicationProvider: { nil }
         )
         let reloadedStoreImage = try XCTUnwrap(reloadedStore.items.first)
