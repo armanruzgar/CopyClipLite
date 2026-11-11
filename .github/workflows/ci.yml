@@ -27,8 +27,13 @@ jobs:
         run: ./script/tests/installer_process_harness.sh
       - name: Verify release contract
         run: bash script/tests/release_contract_harness.sh
+      - name: Snapshot state before tests
+        run: ./script/check_test_leftovers.sh snapshot "$RUNNER_TEMP/test-leftovers"
       - name: Run tests
         run: ./script/check_coverage.sh
+      - name: Report files left by tests
+        if: always()
+        run: ./script/check_test_leftovers.sh report "$RUNNER_TEMP/test-leftovers"
       - name: Enforce strict concurrency warnings
         run: swift build -Xswiftc -strict-concurrency=complete -Xswiftc -warnings-as-errors
       - name: Build local release artifact
