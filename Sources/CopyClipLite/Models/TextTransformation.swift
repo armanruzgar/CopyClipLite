@@ -30,7 +30,24 @@ enum TextTransformation: String, CaseIterable, Identifiable {
         case .lowercase:
             return text.lowercased()
         case .titleCase:
-            return text.capitalized
+            return Self.titleCased(text)
         }
+    }
+
+    private static func titleCased(_ text: String) -> String {
+        var result = ""
+        var isAtWordStart = true
+        for character in text {
+            if isAtWordStart, character.isLetter {
+                result += character.uppercased()
+            } else {
+                result.append(character)
+            }
+            isAtWordStart = !(character.isLetter
+                || character.isNumber
+                || character == "'"
+                || character == "\u{2019}")
+        }
+        return result
     }
 }

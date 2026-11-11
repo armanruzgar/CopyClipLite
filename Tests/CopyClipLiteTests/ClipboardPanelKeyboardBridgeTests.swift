@@ -3,6 +3,7 @@ import Carbon
 import XCTest
 @testable import CopyClipLite
 
+@MainActor
 final class ClipboardPanelKeyboardBridgeTests: XCTestCase {
     func testRealEventsRespectSearchFieldEditorAndExplicitCommands() throws {
         let fieldEditor = NSTextView(frame: NSRect(x: 0, y: 0, width: 200, height: 30))
@@ -48,9 +49,57 @@ final class ClipboardPanelKeyboardBridgeTests: XCTestCase {
             characters: "\u{8}",
             modifiers: .command
         )
+        XCTAssertFalse(handle(explicitDelete))
+        XCTAssertEqual(actions, [.togglePinSelected])
+        XCTAssertEqual(fieldEditor.string, "search query")
+
+        fieldEditor.string = ""
         XCTAssertTrue(handle(explicitDelete))
         XCTAssertEqual(actions, [.togglePinSelected, .deleteSelected])
-        XCTAssertEqual(fieldEditor.string, "search query")
+    }
+
+    func testCommandDeleteFallsThroughToTextEditorWithText() {
+        for keyCode in [UInt16(kVK_Delete), UInt16(kVK_ForwardDelete)] {
+            XCTAssertNil(
+                ClipboardPanelKeyRouting.action(
+                    for: input(
+                        keyCode: keyCode,
+                        modifiers: .command,
+                        isEditingText: true,
+                        editorHasText: true
+                    )
+                )
+            )
+            XCTAssertEqual(
+                ClipboardPanelKeyRouting.action(
+                    for: input(
+                        keyCode: keyCode,
+                        modifiers: .command,
+                        isEditingText: true
+                    )
+                ),
+                .deleteSelected
+            )
+            XCTAssertEqual(
+                ClipboardPanelKeyRouting.action(
+                    for: input(keyCode: keyCode, modifiers: .command)
+                ),
+                .deleteSelected
+            )
+        }
+
+        XCTAssertEqual(
+            ClipboardPanelKeyRouting.action(
+                for: input(
+                    keyCode: UInt16(kVK_ANSI_P),
+                    characters: "p",
+                    modifiers: .command,
+                    isEditingText: true,
+                    editorHasText: true
+                )
+            ),
+            .togglePinSelected
+        )
     }
 
     func testRealCommandFEventWithCapsLockIsConsumedWhileSearchIsFirstResponder() throws {
@@ -322,6 +371,7 @@ final class ClipboardPanelKeyboardBridgeTests: XCTestCase {
         characters: String? = nil,
         modifiers: NSEvent.ModifierFlags = [],
         isEditingText: Bool = false,
+        editorHasText: Bool = false,
         preservesFocusedControlKeys: Bool = false
     ) -> ClipboardPanelKeyInput {
         ClipboardPanelKeyInput(
@@ -330,7 +380,7 @@ final class ClipboardPanelKeyboardBridgeTests: XCTestCase {
             modifierFlags: modifiers,
             focusContext: preservesFocusedControlKeys
                 ? .control
-                : (isEditingText ? .textEditor : .list)
+                : (isEditingText ? .textEditor(hasText: editorHasText) : .list)
         )
     }
 

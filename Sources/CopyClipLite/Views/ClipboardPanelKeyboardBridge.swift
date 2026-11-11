@@ -21,11 +21,12 @@ struct ClipboardPanelKeyInput {
 
 enum ClipboardPanelKeyFocusContext: Equatable {
     case list
-    case textEditor
+    case textEditor(hasText: Bool)
     case control
 }
 
 enum ClipboardPanelKeyRouting {
+    @MainActor
     static func action(
         for event: NSEvent,
         firstResponder: NSResponder?
@@ -40,9 +41,11 @@ enum ClipboardPanelKeyRouting {
         )
     }
 
+    @MainActor
     private static func focusContext(for firstResponder: NSResponder?) -> ClipboardPanelKeyFocusContext {
         guard let firstResponder else { return .list }
-        return firstResponder is NSTextView ? .textEditor : .control
+        guard let textView = firstResponder as? NSTextView else { return .control }
+        return .textEditor(hasText: !textView.string.isEmpty)
     }
 
     static func action(for input: ClipboardPanelKeyInput) -> ClipboardPanelKeyAction? {
@@ -67,6 +70,10 @@ enum ClipboardPanelKeyRouting {
         }
 
         if commandOnly, input.keyCode == 51 || input.keyCode == 117 {
+            // Leave ⌘⌫ / ⌘⌦ to the text field so they keep deleting to the line boundary.
+            if input.focusContext == .textEditor(hasText: true) {
+                return nil
+            }
             return .deleteSelected
         }
 
@@ -105,6 +112,7 @@ enum ClipboardPanelKeyRouting {
         return handler(action)
     }
 
+    @MainActor
     static func handle(
         _ event: NSEvent,
         firstResponder: NSResponder?,

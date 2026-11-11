@@ -305,7 +305,11 @@ struct ClipboardPanelView: View {
         if selectedIDs.count > 1 {
             pendingDestructiveAction = .deleteSelection(selectedIDs)
         } else if let item = selectedItem() {
-            deleteItem(item)
+            if item.isPinned {
+                pendingDestructiveAction = .deleteSelection([item.id])
+            } else {
+                deleteItem(item)
+            }
         }
         return true
     }

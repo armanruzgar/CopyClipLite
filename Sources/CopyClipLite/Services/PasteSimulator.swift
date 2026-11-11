@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import CoreGraphics
 
 enum PasteSimulator {
@@ -20,17 +21,18 @@ enum PasteSimulator {
             return false
         }
         let source = CGEventSource(stateID: .hidSystemState)
+        let keyCode = pasteKeyCode()
 
         let keyDown = CGEvent(
             keyboardEventSource: source,
-            virtualKey: 0x09,
+            virtualKey: keyCode,
             keyDown: true
         )
         keyDown?.flags = .maskCommand
 
         let keyUp = CGEvent(
             keyboardEventSource: source,
-            virtualKey: 0x09,
+            virtualKey: keyCode,
             keyDown: false
         )
         keyUp?.flags = .maskCommand
@@ -42,6 +44,26 @@ enum PasteSimulator {
         keyDown.postToPid(targetProcessIdentifier)
         keyUp.postToPid(targetProcessIdentifier)
         return true
+    }
+
+    static func pasteKeyCode() -> CGKeyCode {
+        pasteKeyCode(
+            layoutLabelProviders: [
+                KeyboardLayoutTranslator.current(),
+                KeyboardLayoutTranslator.currentASCIICapable(),
+            ].compactMap { $0 }
+        )
+    }
+
+    static func pasteKeyCode(
+        layoutLabelProviders: [(Int) -> String?]
+    ) -> CGKeyCode {
+        for provider in layoutLabelProviders {
+            if let keyCode = (0...127).first(where: { provider($0) == "v" }) {
+                return CGKeyCode(keyCode)
+            }
+        }
+        return CGKeyCode(kVK_ANSI_V)
     }
 
     static func openAccessibilitySettings() {

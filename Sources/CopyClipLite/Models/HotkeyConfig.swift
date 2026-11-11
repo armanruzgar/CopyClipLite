@@ -155,45 +155,7 @@ struct HotkeyConfig: Codable, Equatable {
     }
 
     private static func currentKeyboardLayoutLabel(for keyCode: Int) -> String? {
-        guard let inputSource = TISCopyCurrentKeyboardLayoutInputSource()?.takeRetainedValue(),
-              let property = TISGetInputSourceProperty(
-                inputSource,
-                kTISPropertyUnicodeKeyLayoutData
-              ) else {
-            return nil
-        }
-
-        let layoutData = unsafeBitCast(property, to: CFData.self)
-        guard let bytes = CFDataGetBytePtr(layoutData) else {
-            return nil
-        }
-
-        let keyboardLayout = UnsafePointer<UCKeyboardLayout>(
-            OpaquePointer(bytes)
-        )
-        var deadKeyState: UInt32 = 0
-        var characters = [UniChar](repeating: 0, count: 8)
-        var actualLength = 0
-        let status = UCKeyTranslate(
-            keyboardLayout,
-            UInt16(keyCode),
-            UInt16(kUCKeyActionDisplay),
-            0,
-            UInt32(LMGetKbdType()),
-            OptionBits(kUCKeyTranslateNoDeadKeysBit),
-            &deadKeyState,
-            characters.count,
-            &actualLength,
-            &characters
-        )
-        guard status == noErr, actualLength > 0 else {
-            return nil
-        }
-
-        return String(
-            utf16CodeUnits: characters,
-            count: actualLength
-        )
+        KeyboardLayoutTranslator.current()?(keyCode)
     }
 
     private static func normalizedLayoutLabel(_ label: String) -> String? {
@@ -261,4 +223,70 @@ struct HotkeyConfig: Codable, Equatable {
         UnsafeShortcut(keyCode: kVK_ANSI_M, modifiers: cmdKey | optionKey),
         UnsafeShortcut(keyCode: kVK_Space, modifiers: cmdKey | optionKey),
     ]
+}
+
+enum KeyboardLayoutTranslator {
+    static func current() -> ((Int) -> String?)? {
+        TISCopyCurrentKeyboardLayoutInputSource().flatMap {
+            labelProvider(for: $0.takeRetainedValue())
+        }
+    }
+
+    static func currentASCIICapable() -> ((Int) -> String?)? {
+        TISCopyCurrentASCIICapableKeyboardLayoutInputSource().flatMap {
+            labelProvider(for: $0.takeRetainedValue())
+        }
+    }
+
+    static func labelProvider(for inputSource: TISInputSource) -> ((Int) -> String?)? {
+        guard let property = TISGetInputSourceProperty(
+            inputSource,
+            kTISPropertyUnicodeKeyLayoutData
+        ) else {
+            return nil
+        }
+
+        let layoutData = unsafeBitCast(property, to: CFData.self)
+        let keyboardType = UInt32(LMGetKbdType())
+        return { keyCode in
+            translate(keyCode: keyCode, layoutData: layoutData, keyboardType: keyboardType)
+        }
+    }
+
+    private static func translate(
+        keyCode: Int,
+        layoutData: CFData,
+        keyboardType: UInt32
+    ) -> String? {
+        guard let bytes = CFDataGetBytePtr(layoutData) else {
+            return nil
+        }
+
+        let keyboardLayout = UnsafePointer<UCKeyboardLayout>(
+            OpaquePointer(bytes)
+        )
+        var deadKeyState: UInt32 = 0
+        var characters = [UniChar](repeating: 0, count: 8)
+        var actualLength = 0
+        let status = UCKeyTranslate(
+            keyboardLayout,
+            UInt16(keyCode),
+            UInt16(kUCKeyActionDisplay),
+            0,
+            keyboardType,
+            OptionBits(kUCKeyTranslateNoDeadKeysBit),
+            &deadKeyState,
+            characters.count,
+            &actualLength,
+            &characters
+        )
+        guard status == noErr, actualLength > 0 else {
+            return nil
+        }
+
+        return String(
+            utf16CodeUnits: characters,
+            count: actualLength
+        )
+    }
 }
